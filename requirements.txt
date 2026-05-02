@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+opencv-python
+numpy
+pandas
+
+ultralytics
+paddleocr
+
+onnxruntime
+openvino-dev
+
+sqlalchemy
+psycopg2-binary
+
+python-multipart
