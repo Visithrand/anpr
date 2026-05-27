@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from openvino.runtime import Core
+from openvino import Core
 
 class PlateDetector:
     def __init__(self, model_xml: str, confidence: float = 0.5):
@@ -35,8 +35,16 @@ class PlateDetector:
             x2, y2 = min(orig_w, x2), min(orig_h, y2)
             boxes.append((x1, y1, x2, y2, float(score)))
         boxes.sort(key=lambda b: b[4], reverse=True)
-        return boxes[:1]  # return only best detection per frame
+        return boxes
 
-    def crop_plate(self, frame: np.ndarray, box: tuple) -> np.ndarray:
+    def crop_plate(self, frame: np.ndarray, box: tuple, margin: int = 0) -> np.ndarray:
         x1, y1, x2, y2, _ = box
+        orig_h, orig_w = frame.shape[:2]
+        
+        # Add margin to the bounding box
+        x1 = max(0, int(x1 - margin))
+        y1 = max(0, int(y1 - margin))
+        x2 = min(orig_w, int(x2 + margin))
+        y2 = min(orig_h, int(y2 + margin))
+        
         return frame[y1:y2, x1:x2]

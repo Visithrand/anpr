@@ -1,23 +1,21 @@
-# Environments
-.env
-.venv
-env/
+# ==============================================================================
+# ANPR.OS — Git Ignore Patterns
+# ==============================================================================
+
+# --- Environments & User-Specific Requests ---
 venv/
-ENV/
-env.bak/
-venv.bak/
+.venv/
 venv_ocr/
-
-# Node.js
 node_modules/
-npm-debug.log
-yarn-error.log
-dist/
-build/
-.next/
-
-# Python
 __pycache__/
+*.pyc
+logs/
+frontend/dist/
+.env
+.env.local
+.env.*.local
+
+# --- Python Compiled/Cache Files ---
 *.py[cod]
 *$py.class
 *.so
@@ -36,34 +34,40 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 MANIFEST
 
-# Machine Learning / AI
+# --- Machine Learning / AI Models (Large Files) ---
 *.pth
 *.pt
 *.onnx
+*.bin
 *.weights
 *.caffemodel
 *.pb
 *.h5
 *.hdf5
 runs/
-logs/
-tensorboard/
-wandb/
 
-# IDE / OS
+# --- Project-Specific Transient & Runtime Directories ---
+snapshots/
+static/plates/
+dataset/
+images/
+
+# --- Large Media Files ---
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.zip
+*.tar.gz
+*.rar
+
+# --- IDE / OS Specific Files ---
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
-
-# Other
-images/
-dataset/
-*.zip
-# (Uncomment above if 'images' folder is meant to be ignored large datasets)

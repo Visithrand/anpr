@@ -46,7 +46,7 @@ const ExitPanel = () => {
               </tr>
               <tr>
                 <td style={{ backgroundColor: '#f9f9f9', textAlign: 'left', fontWeight: 'bold' }}>Duration:</td>
-                <td style={{ textAlign: 'left' }}>{billData.duration_hours} Hours</td>
+                <td style={{ textAlign: 'left' }}>{billData.duration_minutes ? (billData.duration_minutes / 60).toFixed(2) : 0} Hours</td>
               </tr>
               <tr>
                 <td style={{ backgroundColor: '#f9f9f9', textAlign: 'left', fontWeight: 'bold' }}>Amount Due:</td>

@@ -1,0 +1,54 @@
+# ==============================================================================
+# ANPR.OS — OCR Microservice Dockerfile
+# ==============================================================================
+# Separate container for PaddleOCR (heavy, ~2GB with models).
+# Keeps the main backend image lean.
+# ==============================================================================
+
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# System dependencies for OpenCV and PaddlePaddle
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r ocr && useradd -r -g ocr -m ocr
+
+WORKDIR /app
+
+# Install OCR dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    opencv-python \
+    numpy \
+    paddlepaddle \
+    paddleocr \
+    python-multipart
+
+# Copy only the OCR service file
+COPY ocr_service.py .
+
+RUN chown -R ocr:ocr /app
+
+USER ocr
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import httpx; r = httpx.get('http://localhost:8001/', timeout=5); exit(0 if r.status_code == 200 else 1)" || exit 1
+
+CMD ["uvicorn", "ocr_service:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8001", \
+     "--workers", "1", \
+     "--log-level", "warning"]

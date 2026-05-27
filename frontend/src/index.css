@@ -1,14 +1,19 @@
 :root {
-  --gov-green: #006400;
-  --gov-light-green: #e6f7eb;
-  --gov-border: #dcdcdc;
-  --gov-bg-gray: #f5f5f5;
-  --gov-text: #333333;
-  --gov-link: #000000;
-  --gov-button-gray: #4a4a4a;
-  --gov-button-red: #d9534f;
+  --gov-green: #0f172a;
+  --gov-light-green: #f8fafc;
+  --gov-mid-green: #e2e8f0;
+  --gov-border: #e2e8f0;
+  --gov-bg-gray: #f1f5f9;
+  --gov-white: #ffffff;
+  --gov-text: #0f172a;
+  --gov-muted: #64748b;
+  --gov-link: #0f172a;
+  --gov-button-gray: #475569;
+  --gov-button-red: #ef4444;
+  --gov-blue: #0ea5e9;
+  --gov-light-blue: #e0f2fe;
   
-  --font-family: Arial, Helvetica, sans-serif;
+  --font-family: 'Inter', sans-serif;
 }
 
 * {
@@ -19,10 +24,12 @@
 
 body {
   font-family: var(--font-family);
-  background-color: #ffffff;
+  background-color: #f8fafc;
   color: var(--gov-text);
   font-size: 14px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {

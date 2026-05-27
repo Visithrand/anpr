@@ -1,16 +1,51 @@
+# ==============================================================================
+# ANPR.OS — Python Dependencies
+# ==============================================================================
+
+# --- Web Framework ---
 fastapi
-uvicorn
+uvicorn[standard]
+
+# --- Computer Vision ---
 opencv-python
 numpy
 pandas
 
+# --- ANPR / ML ---
 ultralytics
-paddleocr
 
+# --- Inference ---
 onnxruntime
 openvino-dev
 
+# --- Database ---
 sqlalchemy
 psycopg2-binary
+alembic
 
+# --- Auth ---
 python-multipart
+passlib[bcrypt]
+python-jose[cryptography]
+
+# --- Validation ---
+email-validator
+pydantic[email]
+pydantic-settings
+
+# --- Configuration ---
+python-dotenv
+
+# --- HTTP Client ---
+httpx
+requests
+redis>=5.0
+
+# --- Logging (structured) ---
+# Uses stdlib logging — no extra deps needed
+
+# --- Optional: USB Relay support ---
+# pyserial
+
+# --- Optional: GPIO Relay support (Raspberry Pi) ---
+# RPi.GPIO

@@ -1,0 +1,185 @@
+# ==============================================================================
+# ANPR.OS — Docker Compose (Production)
+# ==============================================================================
+# Services:
+#   - postgres  : PostgreSQL 15 database
+#   - ocr       : PaddleOCR microservice
+#   - backend   : FastAPI ANPR backend
+#   - frontend  : Vite React dashboard (dev mode or nginx for prod)
+#
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f backend
+#   docker-compose down
+# ==============================================================================
+
+version: "3.9"
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL Database
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: anpr-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: post
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-visithran@123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - anpr-net
+
+  # --------------------------------------------------------------------------
+  # OCR Microservice (PaddleOCR)
+  # --------------------------------------------------------------------------
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    container_name: anpr-ocr
+    restart: always
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - anpr-net
+
+  # --------------------------------------------------------------------------
+  # Redis (Message Broker & Cache)
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:alpine
+    container_name: anpr-redis
+    restart: always
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - anpr-net
+
+  # --------------------------------------------------------------------------
+  # Backend API (FastAPI)
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anpr-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ocr:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-visithran@123}@postgres:5432/post
+      REDIS_URL: redis://redis:6379/0
+      OCR_SERVICE_URL: http://ocr:8001/ocr
+      BILLING_API_URL: ${BILLING_API_URL:-http://localhost:9001}
+      BILLING_BACKEND: ${BILLING_BACKEND:-http}
+      GATE_API_URL: ${GATE_API_URL:-http://localhost:9000}
+      RELAY_TYPE: ${RELAY_TYPE:-simulated}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CAMERA_AUTO_START: ${CAMERA_AUTO_START:-false}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-anpr-os-secret-key-change-in-production-2026}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./static/plates:/app/static/plates
+      - ./snapshots:/app/snapshots
+      - ./models:/app/models:ro
+      - ./backend/models/plate_det:/app/backend/models/plate_det:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/system/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - anpr-net
+
+  # --------------------------------------------------------------------------
+  # OCR Worker (Decoupled detection + OCR runner)
+  # --------------------------------------------------------------------------
+  ocr_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command: python -m ocr_worker.run
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ocr:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-visithran@123}@postgres:5432/post
+      REDIS_URL: redis://redis:6379/0
+      OCR_SERVICE_URL: http://ocr:8001/ocr
+      OCR_WORKER_COUNT: ${OCR_WORKER_COUNT:-1}
+      FRAME_PUBLISH_INTERVAL: ${FRAME_PUBLISH_INTERVAL:-3}
+    volumes:
+      - ./logs:/app/logs
+      - ./static/plates:/app/static/plates
+      - ./snapshots:/app/snapshots
+      - ./models:/app/models:ro
+      - ./backend/models/plate_det:/app/backend/models/plate_det:ro
+    networks:
+      - anpr-net
+
+  # --------------------------------------------------------------------------
+  # Frontend (Vite React — served via NGINX in production)
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: anpr-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - anpr-net
+
+# ---------------------------------------------------------------------------
+# Volumes & Networks
+# ---------------------------------------------------------------------------
+volumes:
+  pgdata:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  anpr-net:
+    driver: bridge

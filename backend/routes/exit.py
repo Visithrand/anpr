@@ -1,118 +1,174 @@
+"""
+backend/routes/exit.py
+~~~~~~~~~~~~~~~~~~~~~~~~
+Exit gate endpoint — Third-party payment verification flow.
+
+Flow:
+  1. Camera / operator submits plate number at exit gate
+  2. Find active Entry for this plate (status=IN)
+  3. Query external Billing API: GET {BILLING_API_URL}/payment/status?plate=XX
+  4a. Payment confirmed (paid=True):
+      → Entry status = OUT, payment_status = PAID
+      → Billing record updated: paid=True, amount, reference
+      → open_exit_gate() called → boom barrier opens
+      → Audit log: EXIT_APPROVED
+      → Return success + gate status
+  4b. Payment NOT confirmed (paid=False):
+      → Entry stays IN, gate stays closed
+      → Audit log: EXIT_DENIED
+      → Return 402 Payment Required with reason
+"""
+
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.utils.database import get_db
 from backend.models.models import Vehicle, Entry, Billing, AuditLog
+from backend.services.gate_trigger import open_exit_gate
+from backend.services.billing_service import check_payment_status
 from backend.utils.websocket import manager
 
 router = APIRouter()
 
-RATE_PER_HOUR_STANDARD = 20     # ₹20/hr normal rate
-RATE_PER_HOUR_PEAK = 30         # ₹30/hr during peak hours (9 AM - 6 PM)
-DAILY_CAP = 200                 # Max ₹200/day
-PENALTY_HOURS = 24              # Overstay threshold in hours
-PENALTY_AMOUNT = 500            # ₹500 penalty for overstay
-FREE_MINUTES = 15               # First 15 minutes are free
-
-
-def calculate_amount(entry_time: datetime, exit_time: datetime) -> tuple[float, float, str]:
-    """
-    Smart billing with gov-style rules:
-    - First 15 min free
-    - Peak hour pricing (9 AM - 6 PM IST = 3:30–12:30 UTC)
-    - Daily cap at ₹200
-    - ₹500 penalty for overstay beyond 24 hours
-    Returns (amount, duration_minutes, billing_notes)
-    """
-    duration_seconds = (exit_time - entry_time).total_seconds()
-    duration_minutes = duration_seconds / 60.0
-    duration_hours = duration_seconds / 3600.0
-
-    notes = []
-
-    # Rule 1: First 15 minutes free
-    if duration_minutes <= FREE_MINUTES:
-        notes.append("First 15 min free — ₹0 charged")
-        return 0.0, duration_minutes, "; ".join(notes)
-
-    # Rule 2: Penalty for overstay beyond 24 hours
-    if duration_hours > PENALTY_HOURS:
-        notes.append(f"Overstay penalty applied (>{PENALTY_HOURS}hrs)")
-        return float(PENALTY_AMOUNT), duration_minutes, "; ".join(notes)
-
-    # Rule 3: Peak hour detection (entry hour in UTC, 3:30–12:30 UTC = 9–18 IST)
-    entry_hour = entry_time.hour
-    is_peak = 3 <= entry_hour < 13  # 3:30 AM–12:30 PM UTC == 9 AM–6 PM IST
-    rate = RATE_PER_HOUR_PEAK if is_peak else RATE_PER_HOUR_STANDARD
-
-    if is_peak:
-        notes.append(f"Peak hour rate applied (₹{rate}/hr)")
-    else:
-        notes.append(f"Standard rate applied (₹{rate}/hr)")
-
-    # Rule 4: Calculate and cap
-    raw_amount = (duration_hours * rate)
-    amount = min(raw_amount, DAILY_CAP)
-
-    if raw_amount > DAILY_CAP:
-        notes.append(f"Daily cap (₹{DAILY_CAP}) applied")
-
-    return round(amount, 2), round(duration_minutes, 2), "; ".join(notes)
-
 
 @router.post("/exit")
-async def vehicle_exit(plate_number: str, operator: str = "System Admin", db: Session = Depends(get_db)):
+async def vehicle_exit(
+    plate_number: str,
+    operator: str = "System Admin",
+    bypass_payment: bool = False,
+    trigger_gate: bool = True,
+    db: Session = Depends(get_db),
+):
+    """
+    Process vehicle exit.
+    Gate only opens if the external billing system confirms payment,
+    unless bypass_payment is set to True (Admin Override).
+    """
     try:
+        # 1. Find vehicle
         vehicle = db.query(Vehicle).filter(
             Vehicle.plate_number == plate_number
         ).first()
 
         if not vehicle:
-            raise HTTPException(status_code=404, detail="Vehicle not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Vehicle {plate_number} not registered in the system"
+            )
 
+        # 2. Find active entry
         entry = db.query(Entry).filter(
             Entry.vehicle_id == vehicle.id,
             Entry.status == "IN"
         ).first()
 
         if not entry:
-            raise HTTPException(status_code=400, detail="No active entry found")
+            raise HTTPException(
+                status_code=400,
+                detail=f"No active entry found for vehicle {plate_number}"
+            )
 
+        # 3. Check if already marked as PAID locally, bypassed, or query external Billing API
+        if bypass_payment or entry.payment_status == "PAID" or (entry.billing and entry.billing.paid):
+            payment = {
+                "paid": True,
+                "amount": entry.billing.amount if entry.billing else 0.0,
+                "reference": "BYPASS" if bypass_payment else (entry.billing.billing_reference if entry.billing else "LOCAL"),
+                "message": "Payment bypassed by Admin Override" if bypass_payment else "Payment verified locally via database status",
+                "api_reachable": True
+            }
+        else:
+            payment = await check_payment_status(plate_number)
+
+        if not payment["paid"]:
+            # ---- PAYMENT NOT CONFIRMED → Gate stays closed ----
+            audit = AuditLog(
+                action="EXIT_DENIED",
+                plate_number=plate_number,
+                operator=operator,
+                details=(
+                    f"Exit denied — payment not confirmed. "
+                    f"Billing API reachable: {payment['api_reachable']}. "
+                    f"Reason: {payment['message']}"
+                ),
+            )
+            db.add(audit)
+            db.commit()
+
+            await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
+
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": "Exit denied — payment not yet confirmed by billing system",
+                    "plate_number": plate_number,
+                    "payment_status": "PENDING",
+                    "gate": "closed",
+                    "reason": payment["message"],
+                    "api_reachable": payment["api_reachable"],
+                },
+            )
+
+        # ---- PAYMENT CONFIRMED → Open gate ----
         exit_time = datetime.utcnow()
+
+        # Update entry
         entry.exit_time = exit_time
         entry.status = "OUT"
+        entry.billed = True
+        entry.payment_status = "PAID"
 
-        amount, duration_minutes, billing_notes = calculate_amount(entry.entry_time, exit_time)
-
-        bill = Billing(
-            entry_id=entry.id,
-            duration_minutes=duration_minutes,
-            amount=amount
-        )
-        db.add(bill)
+        # Update billing record
+        billing = entry.billing
+        if billing:
+            billing.paid = True
+            billing.amount = payment["amount"]
+            billing.billing_reference = payment["reference"]
+        else:
+            # Safety: create billing record if somehow missing
+            billing = Billing(
+                entry_id=entry.id,
+                amount=payment["amount"],
+                paid=True,
+                billing_reference=payment["reference"],
+            )
+            db.add(billing)
 
         # Audit log
-        log = AuditLog(
-            action="EXIT",
+        duration_min = round((exit_time - entry.entry_time).total_seconds() / 60, 1)
+        audit = AuditLog(
+            action="EXIT_APPROVED",
             plate_number=plate_number,
             operator=operator,
-            details=f"Ticket {entry.ticket_id}. Duration: {duration_minutes:.1f} min. Amount: ₹{amount}. {billing_notes}"
+            details=(
+                f"Vehicle exited. Duration: {duration_min} min. "
+                f"Amount: {payment['amount']}. "
+                f"Ref: {payment['reference']}. "
+                f"{payment['message']}"
+            ),
         )
-        db.add(log)
+        db.add(audit)
         db.commit()
 
-        # Broadcast real-time update
+        # Trigger exit gate
+        gate = None
+        if trigger_gate:
+            gate = await open_exit_gate()
+
+        # Broadcast dashboard refresh
         await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
 
         return {
-            "message": "Vehicle exited",
+            "message": "Payment confirmed — exit gate opened",
             "plate_number": plate_number,
-            "ticket_id": entry.ticket_id,
-            "duration_minutes": round(duration_minutes, 2),
-            "amount": amount,
-            "billing_notes": billing_notes,
-            "status": "OUT"
+            "status": "OUT",
+            "payment_status": "PAID",
+            "duration_minutes": duration_min,
+            "amount": payment["amount"],
+            "billing_reference": payment["reference"],
+            "billing_message": payment["message"],
+            "gate": gate,
         }
 
     except HTTPException as he:
