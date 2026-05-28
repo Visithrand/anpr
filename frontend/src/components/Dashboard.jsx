@@ -56,7 +56,7 @@ const Dashboard = () => {
     const isDev = import.meta.env.DEV;
     const wsUrl = isDev 
       ? 'ws://127.0.0.1:8000/ws/dashboard' 
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/dashboard`;
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/dashboard`;
     const ws = new WebSocket(wsUrl);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);

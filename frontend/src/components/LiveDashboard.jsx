@@ -7,7 +7,7 @@ import {
 } from '../services/api';
 
 const IS_DEV = import.meta.env.DEV;
-const API_BASE = IS_DEV ? 'http://127.0.0.1:8000' : window.location.origin;
+const API_BASE = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 const LiveDashboard = () => {
   const [cameras, setCameras] = useState([]);
@@ -43,7 +43,7 @@ const LiveDashboard = () => {
     pollRef.current = setInterval(() => { refreshCameras(); refreshDetections(); }, 2500);
     const wsUrl = IS_DEV 
       ? 'ws://127.0.0.1:8000/ws/dashboard' 
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/dashboard`;
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/dashboard`;
     const ws = new WebSocket(wsUrl);
     ws.onmessage = () => { refreshCameras(); refreshDetections(); };
     ws.onerror = () => {};

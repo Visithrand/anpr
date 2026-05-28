@@ -4,7 +4,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const IS_DEV = import.meta.env.DEV;
-const API_URL = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.origin}/api`;
+const API_URL = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 const Reports = () => {
   const [data, setData] = useState([]);
