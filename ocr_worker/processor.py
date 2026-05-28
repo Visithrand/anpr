@@ -51,6 +51,59 @@ def get_iou(boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, int]) ->
     return interArea / float(boxAArea + boxBArea - interArea)
 
 
+def _apply_nms(boxes: List[Tuple[int, int, int, int, float]], iou_threshold: float = 0.4) -> List[Tuple[int, int, int, int, float]]:
+    """
+    Non-Maximum Suppression with containment filtering.
+
+    Removes overlapping or nested bounding boxes to prevent duplicate
+    OCR reads from two-line plates (e.g. top-half 'DL7S' + bottom-half 'CB4578'
+    nested inside the full plate 'DL7SCB4578').
+
+    Uses both standard IoU and Intersection-over-Minimum (IoM) to catch
+    boxes that are fully contained inside a larger box.
+    """
+    if len(boxes) <= 1:
+        return boxes
+
+    # Sort by confidence descending (keep the best first)
+    sorted_boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
+    keep: List[Tuple[int, int, int, int, float]] = []
+
+    for candidate in sorted_boxes:
+        cx1, cy1, cx2, cy2, cconf = candidate
+        suppressed = False
+
+        for kept in keep:
+            kx1, ky1, kx2, ky2, _ = kept
+
+            # Calculate intersection
+            ix1 = max(cx1, kx1)
+            iy1 = max(cy1, ky1)
+            ix2 = min(cx2, kx2)
+            iy2 = min(cy2, ky2)
+            inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+
+            if inter == 0:
+                continue
+
+            area_c = max(1, (cx2 - cx1) * (cy2 - cy1))
+            area_k = max(1, (kx2 - kx1) * (ky2 - ky1))
+            union = area_c + area_k - inter
+
+            iou = inter / union if union > 0 else 0
+            # IoM: how much of the smaller box is inside the bigger one
+            iom = inter / min(area_c, area_k)
+
+            if iou > iou_threshold or iom > 0.7:
+                suppressed = True
+                break
+
+        if not suppressed:
+            keep.append(candidate)
+
+    return keep
+
+
 class OCRProcessor:
     """
     Processor orchestrator for the OCR Worker.
@@ -126,10 +179,13 @@ class OCRProcessor:
 
         # 2. Run plate detection
         det_start = time.time()
-        boxes = self.detector.detect_plates(frame)
+        raw_boxes = self.detector.detect_plates(frame)
         det_latency = time.time() - det_start
-        if not boxes:
+        if not raw_boxes:
             return
+
+        # 2b. Apply NMS to suppress nested / overlapping half-plate boxes
+        boxes = _apply_nms(raw_boxes, iou_threshold=0.4)
 
         for box in boxes:
             x1, y1, x2, y2, conf = box

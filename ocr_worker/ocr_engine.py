@@ -24,10 +24,12 @@ log = logging.getLogger(__name__)
 def is_valid_plate(text: str) -> bool:
     """
     Validate plate number format.
-    Must be alphanumeric, between 4 and 12 chars, and contain both letters and digits.
+    Must be alphanumeric, between 7 and 12 chars, and contain both letters and digits.
+    Indian plates are typically 9-10 chars (e.g. DL7SCB4578), so 7 is a safe minimum
+    that rejects fragments like 'DL7S' or 'CB4578'.
     """
     clean = normalize_plate(text)
-    if not re.match(r'^[A-Z0-9]{4,12}$', clean):
+    if not re.match(r'^[A-Z0-9]{7,12}$', clean):
         return False
     has_alpha = any(c.isalpha() for c in clean)
     has_digit = any(c.isdigit() for c in clean)

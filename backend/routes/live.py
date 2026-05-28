@@ -63,7 +63,7 @@ def similar(a: str, b: str) -> float:
 
 def is_valid_plate(text: str) -> bool:
     clean = re.sub(r'[\s\-]', '', text).upper()
-    if not re.match(r'^[A-Z0-9]{4,12}$', clean):
+    if not re.match(r'^[A-Z0-9]{7,12}$', clean):
         return False
     has_alpha = any(c.isalpha() for c in clean)
     has_digit = any(c.isdigit() for c in clean)

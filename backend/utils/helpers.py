@@ -17,11 +17,50 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Indian State Codes (used for plate prefix validation / correction)
+# ---------------------------------------------------------------------------
+INDIAN_STATES = {
+    "AN", "AP", "AR", "AS", "BR", "CG", "CH", "DD", "DL", "GA",
+    "GJ", "HP", "HR", "JH", "JK", "KA", "KL", "LA", "LD", "MH",
+    "ML", "MN", "MP", "MZ", "NL", "OD", "PB", "PY", "RJ", "SK",
+    "TN", "TR", "TS", "UK", "UP", "WB",
+}
+
+
+def clean_indian_plate(text: str) -> str:
+    """
+    Attempt to correct common OCR noise on Indian license plates.
+
+    Handles:
+      - Leading junk characters before a valid 2-letter state code
+        (e.g. 'EDL7SCB4578' → 'DL7SCB4578')
+      - Trailing junk after the plate number
+    """
+    if not text or len(text) < 7:
+        return text
+
+    # Try to find a valid state code starting at different offsets
+    # (handles 1-3 leading noise characters)
+    for offset in range(min(4, len(text) - 6)):
+        candidate_state = text[offset:offset + 2]
+        if candidate_state in INDIAN_STATES:
+            corrected = text[offset:]
+            # Validate the corrected result looks like a plate
+            if len(corrected) >= 7 and re.match(r'^[A-Z]{2}[0-9]', corrected):
+                return corrected
+            break
+
+    return text
+
+
 def normalize_plate(text: str) -> str:
-    """Normalize a plate number: strip whitespace, hyphens, uppercase."""
+    """Normalize a plate number: strip whitespace, hyphens, uppercase, and clean OCR noise."""
     if not text:
         return ""
-    return re.sub(r'[\s\-]', '', text).strip().upper()
+    cleaned = re.sub(r'[\s\-]', '', text).strip().upper()
+    cleaned = clean_indian_plate(cleaned)
+    return cleaned
 
 
 def format_duration(seconds: float) -> str:
