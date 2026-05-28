@@ -8,7 +8,7 @@ uvicorn[standard]
 
 # --- Computer Vision ---
 opencv-python
-numpy
+numpy<2.0.0
 pandas
 
 # --- ANPR / ML ---
