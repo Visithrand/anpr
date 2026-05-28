@@ -45,7 +45,7 @@ USER ocr
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import httpx; r = httpx.get('http://localhost:8001/', timeout=5); exit(0 if r.status_code == 200 else 1)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/')" || exit 1
 
 CMD ["uvicorn", "ocr_service:app", \
      "--host", "0.0.0.0", \
