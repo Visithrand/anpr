@@ -31,8 +31,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     uvicorn[standard] \
     opencv-python \
     numpy \
-    paddlepaddle \
-    paddleocr \
+    paddlepaddle==2.6.1 \
+    paddleocr==2.7.3 \
     python-multipart
 
 # Copy only the OCR service file

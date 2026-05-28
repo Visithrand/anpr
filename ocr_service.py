@@ -33,7 +33,7 @@ def extract_text(img):
     try:
         processed = preprocess(img)
 
-        result = ocr.ocr(processed, cls=True)
+        result = ocr.ocr(processed)
 
         if not result or not result[0]:
             return ""
