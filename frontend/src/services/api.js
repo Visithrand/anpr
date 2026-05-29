@@ -100,6 +100,18 @@ export const approveExit = async (plateNumber) => {
   return response.data;
 };
 
+export const simulateBillingAck = async (plateNumber, amount = 50.0) => {
+  const payload = {
+    plate_number: plateNumber,
+    transaction_id: `MANUAL-TEST-${Date.now()}`,
+    status: "PAID",
+    amount: amount,
+    timestamp: new Date().toISOString()
+  };
+  const response = await api.post('/api/billing-ack', payload);
+  return response.data;
+};
+
 // Audit Logs
 export const getAuditLogs = async (limit = 50) => {
   const response = await api.get(`/audit-logs?limit=${limit}`);

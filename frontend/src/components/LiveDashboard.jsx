@@ -3,7 +3,7 @@ import Zoom from 'react-medium-image-zoom';
 import 'react-medium-image-zoom/dist/styles.css';
 import {
   startLiveFeed, stopLiveFeed, stopAllFeeds, getLiveDetections, clearLiveDetections,
-  registerLiveEntry, approveExit, getCameras, getStreamUrl
+  registerLiveEntry, approveExit, getCameras, getStreamUrl, simulateBillingAck
 } from '../services/api';
 
 const IS_DEV = import.meta.env.DEV;
@@ -98,6 +98,24 @@ const LiveDashboard = () => {
     try {
       const res = await approveExit(editablePlate);
       alert(`Exit approved! Amount: ₹${res.amount}. ${res.billing_notes}`);
+      setSelectedDetection({ ...selectedDetection, is_inside: false, status: 'OUT', billing_status: 'Paid' });
+    } catch(e) {
+      const d = e.response?.data?.detail;
+      alert(`Failed: ${typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || e.message)}`);
+    }
+    setIsRegistering(false);
+  };
+
+  const handleApproveBillingTest = async () => {
+    if (!selectedDetection || !editablePlate) return;
+    setIsRegistering(true);
+    try {
+      const res = await simulateBillingAck(editablePlate);
+      if (res.gate_opened) {
+        alert(`Billing approved successfully! 🚧 Boom barrier automatically opened.`);
+      } else {
+        alert(`Billing approved successfully!`);
+      }
       setSelectedDetection({ ...selectedDetection, is_inside: false, status: 'OUT', billing_status: 'Paid' });
     } catch(e) {
       const d = e.response?.data?.detail;
@@ -309,12 +327,15 @@ const LiveDashboard = () => {
                 </div>
 
                 {/* Action Buttons */}
-                <div style={{ padding: '20px 28px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', gap: '12px', flexShrink: 0 }}>
-                  <button onClick={handleEntry} disabled={isRegistering || selectedDetection?.status === 'IN'} style={{ flex: 1, padding: '14px', background: (isRegistering || selectedDetection?.status === 'IN') ? '#d1d5db' : 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRegistering || selectedDetection?.status === 'IN') ? 'default' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isRegistering || selectedDetection?.status === 'IN') ? 0.6 : 1 }}>
+                <div style={{ padding: '20px 28px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', gap: '12px', flexShrink: 0, flexWrap: 'wrap' }}>
+                  <button onClick={handleEntry} disabled={isRegistering || selectedDetection?.status === 'IN'} style={{ flex: '1 1 45%', padding: '14px', background: (isRegistering || selectedDetection?.status === 'IN') ? '#d1d5db' : 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRegistering || selectedDetection?.status === 'IN') ? 'default' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isRegistering || selectedDetection?.status === 'IN') ? 0.6 : 1 }}>
                     Register Entry & Open Gate
                   </button>
-                  <button onClick={handleExit} disabled={isRegistering || selectedDetection?.status === 'OUT'} style={{ flex: 1, padding: '14px', background: (isRegistering || selectedDetection?.status === 'OUT') ? '#d1d5db' : 'linear-gradient(135deg,#dc2626,#ef4444)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRegistering || selectedDetection?.status === 'OUT') ? 'default' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isRegistering || selectedDetection?.status === 'OUT') ? 0.6 : 1 }}>
+                  <button onClick={handleExit} disabled={isRegistering || selectedDetection?.status === 'OUT'} style={{ flex: '1 1 45%', padding: '14px', background: (isRegistering || selectedDetection?.status === 'OUT') ? '#d1d5db' : 'linear-gradient(135deg,#dc2626,#ef4444)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRegistering || selectedDetection?.status === 'OUT') ? 'default' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isRegistering || selectedDetection?.status === 'OUT') ? 0.6 : 1 }}>
                     Process Exit
+                  </button>
+                  <button onClick={handleApproveBillingTest} disabled={isRegistering || selectedDetection?.billing_status === 'Paid'} style={{ flex: '1 1 100%', padding: '14px', background: (isRegistering || selectedDetection?.billing_status === 'Paid') ? '#d1d5db' : 'linear-gradient(135deg,#2563eb,#3b82f6)', color: 'white', border: 'none', borderRadius: '8px', cursor: (isRegistering || selectedDetection?.billing_status === 'Paid') ? 'default' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isRegistering || selectedDetection?.billing_status === 'Paid') ? 0.6 : 1 }}>
+                    [Test] Approve Billing (Webhook)
                   </button>
                 </div>
               </div>
