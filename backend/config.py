@@ -124,6 +124,17 @@ class Settings(BaseSettings):
         default=True,
         description="Auto-start cameras configured in .env on application startup",
     )
+    ENTRY_CAMERA_IDS: str = Field(
+        default="1,2,3,4",
+        description="Comma-separated camera IDs that act as ENTRY gates. "
+                    "Detections from these cameras create Entry records.",
+    )
+    EXIT_CAMERA_IDS: str = Field(
+        default="",
+        description="Comma-separated camera IDs that act as EXIT gates. "
+                    "Detections from these cameras process Exit records. "
+                    "A camera can be in BOTH lists for dual-purpose use.",
+    )
 
     # ------------------------------------------------------------------
     # Gate / Relay
@@ -265,6 +276,20 @@ class Settings(BaseSettings):
             if source:
                 cameras[i] = {"source": source, "label": label}
         return cameras
+
+    @property
+    def entry_camera_set(self) -> set:
+        """Parse ENTRY_CAMERA_IDS into a set of ints."""
+        if not self.ENTRY_CAMERA_IDS.strip():
+            return set()
+        return {int(x.strip()) for x in self.ENTRY_CAMERA_IDS.split(",") if x.strip().isdigit()}
+
+    @property
+    def exit_camera_set(self) -> set:
+        """Parse EXIT_CAMERA_IDS into a set of ints."""
+        if not self.EXIT_CAMERA_IDS.strip():
+            return set()
+        return {int(x.strip()) for x in self.EXIT_CAMERA_IDS.split(",") if x.strip().isdigit()}
 
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),

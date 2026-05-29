@@ -342,8 +342,9 @@ class OCRProcessor:
         log.info("Published detection: %s (OCR: %.1fms, Total: %.1fms) from camera %d", 
                  plate_text, ocr_latency * 1000, (time.time() - timestamp) * 1000, camera_id)
 
-        # 13. Push to entry / exit queues for automatic gate / logic handling
-        # In our system: Camera 1 = Entry Gate, Camera 2 = Exit Gate (by default)
+        # 13. Push to entry / exit queues based on configured camera roles
+        # Camera role is determined by ENTRY_CAMERA_IDS and EXIT_CAMERA_IDS in config
+        # A camera can be in both lists (dual-purpose)
         event_payload = json.dumps({
             "plate_number": plate_text,
             "camera_id": camera_id,
@@ -352,11 +353,13 @@ class OCRProcessor:
             "vehicle_image_url": f"/static/plates/{full_fname}",
         })
 
-        if camera_id == 1:
-            # Entry Camera
+        entry_cameras = settings.entry_camera_set
+        exit_cameras = settings.exit_camera_set
+
+        if camera_id in entry_cameras:
             self.redis.lpush(Queues.ENTRY_EVENTS, event_payload)
-            log.info("Pushed entry event to Redis: %s", plate_text)
-        elif camera_id == 2:
-            # Exit Camera
+            log.info("Pushed ENTRY event to Redis: %s (camera %d)", plate_text, camera_id)
+
+        if camera_id in exit_cameras:
             self.redis.lpush(Queues.EXIT_EVENTS, event_payload)
-            log.info("Pushed exit event to Redis: %s", plate_text)
+            log.info("Pushed EXIT event to Redis: %s (camera %d)", plate_text, camera_id)

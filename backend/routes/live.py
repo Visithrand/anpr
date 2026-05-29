@@ -57,9 +57,36 @@ PLATE_DIR = settings.SNAPSHOT_DIR
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
+
+# Common OCR character substitutions for license plates
+_OCR_SUBS = str.maketrans('OoIlSsBb', '00115588')
+
+def _normalize_for_compare(text: str) -> str:
+    """Normalize plate text for fuzzy comparison — maps common OCR confusions."""
+    return text.upper().translate(_OCR_SUBS)
+
 def similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
+def ocr_similar(a: str, b: str) -> bool:
+    """Check if two plate texts are likely the same plate despite OCR noise."""
+    if not a or not b:
+        return False
+    # Direct match
+    if a == b:
+        return True
+    # Normalized match (O↔0, I↔1, S↔5, B↔8)
+    na, nb = _normalize_for_compare(a), _normalize_for_compare(b)
+    if na == nb:
+        return True
+    # Fuzzy similarity (handles partial reads)
+    if similar(na, nb) > 0.55:
+        return True
+    # Substring containment (one is a prefix/suffix of the other)
+    if len(a) >= 6 and len(b) >= 6:
+        if na in nb or nb in na:
+            return True
+    return False
 
 def is_valid_plate(text: str) -> bool:
     clean = re.sub(r'[\s\-]', '', text).upper()
@@ -271,21 +298,20 @@ class CameraManager:
                             "timestamp": time.time(),
                         })
                     
-                    # Update detections list (same merging/dedup logic)
+                    # Update detections list with OCR-aware dedup
                     existing_det = None
                     for d in feed.detections:
                         try:
                             det_time = datetime.fromisoformat(d.timestamp)
                             if (datetime.utcnow() - det_time).total_seconds() < 300:
-                                if (similar(d.plate_text, plate_text) > 0.65
-                                        or plate_text in d.plate_text
-                                        or d.plate_text in plate_text):
+                                if ocr_similar(d.plate_text, plate_text):
                                     existing_det = d
                                     break
                         except (ValueError, TypeError):
                             continue
                             
                     if existing_det:
+                        # Keep the longer (more complete) plate text
                         if len(plate_text) > len(existing_det.plate_text):
                             existing_det.plate_text = plate_text
                         existing_det.timestamp = datetime.utcnow().isoformat()
@@ -410,12 +436,15 @@ class CameraManager:
                     ))
                     db.commit()
                     
-                import asyncio
+                # Trigger gate using sync relay controller directly
+                # (asyncio.run() crashes inside threads with an existing event loop)
                 try:
-                    asyncio.run(open_entry_gate())
-                    asyncio.run(manager.broadcast('{"type": "REFRESH_DASHBOARD"}'))
-                except Exception as loop_err:
-                    log.error("Failed to run entry gate trigger: %s", loop_err)
+                    from backend.services.relay_controller import get_relay_controller
+                    controller = get_relay_controller()
+                    controller.open_gate("entry")
+                    log.info("Entry gate triggered for %s", plate_number)
+                except Exception as gate_err:
+                    log.error("Failed to trigger entry gate: %s", gate_err)
                     
             except Exception as e:
                 log.error("Error in entry events loop: %s", e)
@@ -456,10 +485,27 @@ class CameraManager:
                         log.warning("Exit failed: No active entry for vehicle %s", plate_number)
                         continue
                         
-                import asyncio
-                async def process_exit():
-                    from backend.services.billing_service import check_payment_status
-                    payment = await check_payment_status(plate_number)
+                # Process exit synchronously (no asyncio.run — we're in a thread)
+                try:
+                    # For auto-exit, use sync HTTP call to billing API
+                    import httpx
+                    billing_url = f"{settings.BILLING_API_URL.rstrip('/')}/payment/status"
+                    payment = {"paid": False, "amount": 0.0, "reference": "", "message": "API unreachable", "api_reachable": False}
+                    
+                    try:
+                        with httpx.Client(timeout=8.0) as client:
+                            resp = client.get(billing_url, params={"plate": plate_number})
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                payment = {
+                                    "paid": bool(data.get("paid", False)),
+                                    "amount": float(data.get("amount", 0.0)),
+                                    "reference": str(data.get("reference", "")),
+                                    "message": str(data.get("message", "")),
+                                    "api_reachable": True,
+                                }
+                    except Exception as billing_err:
+                        log.warning("Billing API unreachable for auto-exit %s: %s", plate_number, billing_err)
                     
                     with SessionLocal() as db:
                         db_vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
@@ -467,6 +513,10 @@ class CameraManager:
                             Entry.vehicle_id == db_vehicle.id,
                             Entry.status == "IN"
                         ).first()
+                        
+                        if not db_entry:
+                            log.warning("Exit event: no active entry for %s", plate_number)
+                            continue
                         
                         if not payment["paid"]:
                             db.add(AuditLog(
@@ -476,9 +526,8 @@ class CameraManager:
                                 details=f"Auto exit denied — payment not confirmed: {payment['message']}",
                             ))
                             db.commit()
-                            await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
                             log.warning("Auto-exit denied for %s — payment pending.", plate_number)
-                            return
+                            continue
                             
                         exit_time = datetime.utcnow()
                         duration_min = round((exit_time - db_entry.entry_time).total_seconds() / 60, 1)
@@ -510,14 +559,14 @@ class CameraManager:
                         ))
                         db.commit()
                         
-                    await open_exit_gate()
-                    await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
+                    # Trigger gate using sync relay controller
+                    from backend.services.relay_controller import get_relay_controller
+                    controller = get_relay_controller()
+                    controller.open_gate("exit")
                     log.info("Auto-exit approved and gate opened for %s", plate_number)
                     
-                try:
-                    asyncio.run(process_exit())
-                except Exception as loop_err:
-                    log.error("Failed to process auto-exit: %s", loop_err)
+                except Exception as exit_err:
+                    log.error("Failed to process auto-exit for %s: %s", plate_number, exit_err)
                     
             except Exception as e:
                 log.error("Error in exit events loop: %s", e)
