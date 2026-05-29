@@ -96,7 +96,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-visithran@123}@postgres:5432/post
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-admin123}@postgres:5432/post
       REDIS_URL: redis://redis:6379/0
       OCR_SERVICE_URL: http://ocr:8001/ocr
       BILLING_API_URL: ${BILLING_API_URL:-http://localhost:9001}
