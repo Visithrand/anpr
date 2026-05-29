@@ -75,7 +75,7 @@ class Settings(BaseSettings):
         description="Number of OCR worker threads",
     )
     FRAME_PUBLISH_INTERVAL: int = Field(
-        default=3, ge=1, le=10,
+        default=6, ge=1, le=15,
         description="Publish every Nth frame to Redis for OCR (throttling)",
     )
 
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     )
     OCR_TIMEOUT_SECONDS: float = Field(default=5.0, ge=1.0)
     PLATE_COOLDOWN_SECONDS: int = Field(
-        default=30, ge=5,
+        default=60, ge=5,
         description="Seconds before the same plate is re-detected",
     )
 

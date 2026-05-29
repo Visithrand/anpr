@@ -34,20 +34,42 @@ def clean_indian_plate(text: str) -> str:
 
     Handles:
       - Leading junk characters before a valid 2-letter state code
-        (e.g. 'EDL7SCB4578' → 'DL7SCB4578')
+        (e.g. 'PDL7SCB4578' → 'DL7SCB4578')
       - Trailing junk after the plate number
+        (e.g. 'DL7SCB4578X' → 'DL7SCB4578')
+      - Both leading AND trailing noise simultaneously
     """
     if not text or len(text) < 7:
         return text
 
-    # Try to find a valid state code starting at different offsets
-    # (handles 1-3 leading noise characters)
+    # Primary approach: use regex to extract a valid Indian plate pattern
+    # Format: [A-Z]{2} [0-9]{1,2} [A-Z]{0,3} [0-9]{1,4}
+    # Examples: DL7SCB4578, KA01AB1234, MH12DE1433, TN10Z1234
+    plate_pattern = re.compile(
+        r'([A-Z]{2}'       # State code (2 letters)
+        r'[0-9]{1,2}'      # District code (1-2 digits)
+        r'[A-Z]{0,3}'      # Series letters (0-3 letters)
+        r'[0-9]{1,4})'     # Registration number (1-4 digits)
+    )
+
+    match = plate_pattern.search(text)
+    if match:
+        extracted = match.group(1)
+        # Verify the state code is a real Indian state
+        state_code = extracted[:2]
+        if state_code in INDIAN_STATES and len(extracted) >= 7:
+            return extracted
+
+    # Fallback: legacy offset-based approach for edge cases
     for offset in range(min(4, len(text) - 6)):
         candidate_state = text[offset:offset + 2]
         if candidate_state in INDIAN_STATES:
             corrected = text[offset:]
-            # Validate the corrected result looks like a plate
             if len(corrected) >= 7 and re.match(r'^[A-Z]{2}[0-9]', corrected):
+                # Also trim trailing junk: keep only up to 12 chars
+                # (longest Indian plates are ~10-11 chars)
+                if len(corrected) > 12:
+                    corrected = corrected[:12]
                 return corrected
             break
 
