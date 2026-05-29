@@ -5,7 +5,7 @@ class BoomBarrierRelay:
     RELAY_COILS = {1:512, 2:513, 3:514, 4:515, 5:516}
 
     def __init__(self):
-        self.ip = os.getenv("RELAY_IP", "192.168.0.10")
+        self.ip = os.getenv("RELAY_IP", "192.168.1.110")
         self.port = int(os.getenv("RELAY_PORT", 502))
         self.unit = int(os.getenv("RELAY_UNIT", 1))
         self.client = None
