@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Database
     # ------------------------------------------------------------------
     DATABASE_URL: str = Field(
-        default="postgresql://postgres:visithran%40123@localhost:5432/post",
+        default="postgresql://postgres:admin123@localhost:5433/post",
         description="SQLAlchemy database connection URL",
     )
     DB_POOL_SIZE: int = Field(default=10, ge=1, le=100)
