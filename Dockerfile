@@ -44,8 +44,8 @@ COPY . .
 RUN mkdir -p logs static/plates snapshots /app/uploads/plates /app/uploads/vehicles && \
     chown -R anpr:anpr /app
 
-# Switch to non-root user
-USER anpr
+# Switch to non-root user (Disabled to fix docker volume root permissions)
+# USER anpr
 
 # Expose the API port
 EXPOSE 8000

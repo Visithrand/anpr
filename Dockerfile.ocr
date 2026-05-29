@@ -40,7 +40,7 @@ COPY ocr_service.py .
 
 RUN chown -R ocr:ocr /app
 
-USER ocr
+# USER ocr
 
 EXPOSE 8001
 
