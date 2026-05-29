@@ -198,12 +198,8 @@ class WatchdogService:
     def _check_ocr_service(self):
         """Ping the OCR microservice health endpoint."""
         try:
-            from urllib.parse import urlparse
-            parsed = urlparse(settings.OCR_SERVICE_URL)
-            base_url = f"{parsed.scheme}://{parsed.netloc}/"
-                
             resp = httpx.get(
-                base_url,
+                settings.OCR_SERVICE_URL.replace("/ocr", "/"),
                 timeout=5.0,
             )
             if resp.status_code == 200:
