@@ -25,7 +25,7 @@ alembic
 
 # --- Auth ---
 python-multipart
-bcrypt==4.0.1
+bcrypt==3.2.2
 passlib[bcrypt]
 python-jose[cryptography]
 
