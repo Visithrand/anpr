@@ -346,7 +346,7 @@ const Reports = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                 <tr>
-                  {['#', 'Transaction ID', 'Plate Number', 'Entry Time', 'Exit Time', 'Duration', 'Status', 'Payment', 'Amount'].map(col => (
+                  {['#', 'Transaction ID', 'Plate Number', 'Vehicle', 'Plate', 'Entry Time', 'Exit Time', 'Duration', 'Status', 'Payment', 'Amount'].map(col => (
                     <th key={col} style={{ padding: '14px 18px', color: '#475569', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{col}</th>
                   ))}
                 </tr>
@@ -354,7 +354,7 @@ const Reports = () => {
               <tbody>
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan="9" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan="11" style={{ padding: '60px', textAlign: 'center', color: '#94a3b8' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                         <div style={{ fontSize: '40px' }}>📋</div>
                         <span style={{ fontSize: '15px', fontWeight: '500' }}>No records found for this period.</span>
@@ -376,6 +376,16 @@ const Reports = () => {
                         <span style={{ fontWeight: '800', color: '#0f172a', fontSize: '15px', letterSpacing: '0.5px', background: '#f1f5f9', padding: '3px 8px', borderRadius: '4px' }}>
                           {row.plate_number}
                         </span>
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        {row.vehicle_image_path ? (
+                          <img src={`${API_URL}${row.vehicle_image_path}`} alt="Vehicle" style={{ height: '32px', width: '56px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => window.open(`${API_URL}${row.vehicle_image_path}`, '_blank')} onError={e => e.target.style.display='none'} title="Click to enlarge" />
+                        ) : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        {row.plate_image_path ? (
+                          <img src={`${API_URL}${row.plate_image_path}`} alt="Plate" style={{ height: '32px', width: '56px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }} onClick={() => window.open(`${API_URL}${row.plate_image_path}`, '_blank')} onError={e => e.target.style.display='none'} title="Click to enlarge" />
+                        ) : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>}
                       </td>
                       <td style={{ padding: '14px 18px', color: '#475569', fontSize: '13px', whiteSpace: 'nowrap' }}>{formatDate(row.entry_time)}</td>
                       <td style={{ padding: '14px 18px', color: '#475569', fontSize: '13px', whiteSpace: 'nowrap' }}>{formatDate(row.exit_time)}</td>

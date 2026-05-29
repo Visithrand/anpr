@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getAuditLogs, clearAuditLogs } from '../services/api';
 
+const IS_DEV = import.meta.env.DEV;
+const API_BASE = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`;
+
 const AuditTrail = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +183,8 @@ const AuditTrail = () => {
                   <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ID</th>
                   <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Action</th>
                   <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Plate Number</th>
-                  <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Operator</th>
+                  <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Image</th>
+                  <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Lane/Cam</th>
                   <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Timestamp</th>
                   <th style={{ padding: '14px 20px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Details</th>
                 </tr>
@@ -196,16 +200,43 @@ const AuditTrail = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredLogs.map((log) => (
-                    <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '14px 20px', color: '#94a3b8', fontSize: '12px', fontFamily: 'monospace' }}>#{log.id}</td>
-                      <td style={{ padding: '14px 20px' }}>{actionBadge(log.action)}</td>
-                      <td style={{ padding: '14px 20px', fontWeight: '700', color: '#0f172a', fontSize: '14px' }}>{log.plate_number}</td>
-                      <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px' }}>{log.operator}</td>
-                      <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px' }}>{fmtDate(log.timestamp)}</td>
-                      <td style={{ padding: '14px 20px', color: '#64748b', fontSize: '12px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.details}>{log.details || '-'}</td>
-                    </tr>
-                  ))
+                  filteredLogs.map((log) => {
+                    let detailsObj = null;
+                    let message = log.details || '-';
+                    try {
+                      if (log.details && log.details.startsWith('{')) {
+                        detailsObj = JSON.parse(log.details);
+                        message = detailsObj.message || message;
+                      }
+                    } catch (e) {
+                      // fallback to string
+                    }
+
+                    return (
+                      <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                        <td style={{ padding: '14px 20px', color: '#94a3b8', fontSize: '12px', fontFamily: 'monospace' }}>#{log.id}</td>
+                        <td style={{ padding: '14px 20px' }}>{actionBadge(log.action)}</td>
+                        <td style={{ padding: '14px 20px', fontWeight: '700', color: '#0f172a', fontSize: '14px' }}>{log.plate_number}</td>
+                        <td style={{ padding: '14px 20px' }}>
+                          {detailsObj && detailsObj.vehicle_image_url ? (
+                            <img src={`${API_BASE}${detailsObj.vehicle_image_url}`} alt="Vehicle" style={{ height: '32px', width: '56px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => window.open(`${API_BASE}${detailsObj.vehicle_image_url}`, '_blank')} onError={e => e.target.style.display='none'} title="Click to enlarge" />
+                          ) : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>}
+                        </td>
+                        <td style={{ padding: '14px 20px', color: '#475569', fontSize: '12px' }}>
+                          {detailsObj ? (
+                            <div>
+                              <div style={{ fontWeight: '600', color: '#334155' }}>{detailsObj.lane || 'Main Gate'}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '10px' }}>Cam: {detailsObj.camera_id || '1'}</div>
+                            </div>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px' }}>{fmtDate(log.timestamp)}</td>
+                        <td style={{ padding: '14px 20px', color: '#64748b', fontSize: '12px', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={message}>{message}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

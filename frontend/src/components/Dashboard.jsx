@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getDashboard, recordExit } from '../services/api';
 
+const IS_DEV = import.meta.env.DEV;
+const API_BASE = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`;
+
 const Dashboard = () => {
   const [data, setData] = useState({
     vehicles_inside: 0,
@@ -241,6 +244,7 @@ const Dashboard = () => {
                 <tr>
                   <th style={{ padding: '14px 24px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '60px' }}>S.No.</th>
                   <th style={{ padding: '14px 24px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Registration No.</th>
+                  <th style={{ padding: '14px 24px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Vehicle</th>
                   <th style={{ padding: '14px 24px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Entry Time</th>
                   <th style={{ padding: '14px 24px', color: '#64748b', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Status</th>
                 </tr>
@@ -248,7 +252,7 @@ const Dashboard = () => {
               <tbody>
                 {filteredVehicles.length === 0 ? (
                   <tr>
-                    <td colSpan="4" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan="5" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         <span style={{ fontSize: '14px' }}>No active vehicles found.</span>
@@ -270,6 +274,18 @@ const Dashboard = () => {
                     >
                       <td style={{ padding: '14px 24px', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>{String(index + 1).padStart(2, '0')}</td>
                       <td style={{ padding: '14px 24px', fontWeight: '700', color: '#0f172a', fontSize: '14px' }}>{v.plate_number}</td>
+                      <td style={{ padding: '14px 24px' }}>
+                        {v.vehicle_image_path ? (
+                          <img 
+                            src={`${API_BASE}${v.vehicle_image_path}`} 
+                            alt="Vehicle" 
+                            style={{ height: '36px', width: '64px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
+                            onError={(e) => e.target.style.display = 'none'}
+                          />
+                        ) : (
+                          <div style={{ height: '36px', width: '64px', background: '#f1f5f9', borderRadius: '4px', border: '1px dotted #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#94a3b8' }}>No Img</div>
+                        )}
+                      </td>
                       <td style={{ padding: '14px 24px', color: '#475569', fontSize: '13px' }}>
                         <span style={{ fontWeight: '500', color: '#0f172a' }}>{formatDate(v.entry_time).split(',')[0]}</span>
                         <span style={{ marginLeft: '6px', color: '#64748b' }}>{formatDate(v.entry_time).split(',')[1]}</span>
@@ -358,6 +374,31 @@ const Dashboard = () => {
 
             {/* Body */}
             <div style={{ padding: '24px' }}>
+              
+              {/* Images Preview Section */}
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', height: '140px' }}>
+                <div style={{ flex: 1, background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {selectedVehicle.vehicle_image_path ? (
+                    <img src={`${API_BASE}${selectedVehicle.vehicle_image_path}`} alt="Vehicle" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => e.target.style.display = 'none'} />
+                  ) : (
+                    <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: '500' }}>No Vehicle Image</span>
+                  )}
+                </div>
+                <div style={{ width: '120px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ flex: 1, background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
+                    {selectedVehicle.plate_image_path ? (
+                      <img src={`${API_BASE}${selectedVehicle.plate_image_path}`} alt="Plate" style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => e.target.style.display = 'none'} />
+                    ) : (
+                      <span style={{ color: '#94a3b8', fontSize: '10px', textAlign: 'center' }}>No Plate Image</span>
+                    )}
+                  </div>
+                  <div style={{ background: '#f1f5f9', borderRadius: '8px', padding: '8px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700', marginBottom: '2px' }}>Lane</div>
+                    <div style={{ fontSize: '11px', color: '#0f172a', fontWeight: '600' }}>{selectedVehicle.lane || 'Main Gate'}</div>
+                  </div>
+                </div>
+              </div>
+
               <div style={{ background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#64748b', fontSize: '13px', fontWeight: '500' }}>Registration Number</span>

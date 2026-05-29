@@ -430,11 +430,18 @@ class CameraManager:
                     billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
                     db.add(billing)
                     
+                    import json
                     db.add(AuditLog(
                         action="ENTRY",
                         plate_number=plate_number,
                         operator="ANPR-Auto",
-                        details=f"Auto vehicle entry registered at Main Gate. Awaiting billing.",
+                        details=json.dumps({
+                            "message": "Auto vehicle entry registered at Main Gate. Awaiting billing.",
+                            "image_url": image_url,
+                            "vehicle_image_url": vehicle_image_url,
+                            "lane": "Lane 1 - Entry",
+                            "camera_id": payload.get("camera_id", 1)
+                        })
                     ))
                     db.commit()
                     
@@ -518,11 +525,18 @@ class CameraManager:
                             continue
                         
                         if not payment["paid"]:
+                            import json
                             db.add(AuditLog(
                                 action="EXIT_DENIED",
                                 plate_number=plate_number,
                                 operator="ANPR-Auto",
-                                details=f"Auto exit denied — payment not confirmed: {payment['message']}",
+                                details=json.dumps({
+                                    "message": f"Auto exit denied — payment not confirmed: {payment['message']}",
+                                    "image_url": db_entry.plate_image_path,
+                                    "vehicle_image_url": db_entry.vehicle_image_path,
+                                    "lane": "Lane 2 - Exit",
+                                    "camera_id": payload.get("camera_id", 2)
+                                })
                             ))
                             db.commit()
                             log.warning("Auto-exit denied for %s — payment pending.", plate_number)
@@ -550,11 +564,18 @@ class CameraManager:
                             )
                             db.add(billing)
                             
+                        import json
                         db.add(AuditLog(
                             action="EXIT_APPROVED",
                             plate_number=plate_number,
                             operator="ANPR-Auto",
-                            details=f"Auto exit approved. Duration: {duration_min} min. Amount: {payment['amount']}.",
+                            details=json.dumps({
+                                "message": f"Auto exit approved. Duration: {duration_min} min. Amount: {payment['amount']}.",
+                                "image_url": db_entry.plate_image_path,
+                                "vehicle_image_url": db_entry.vehicle_image_path,
+                                "lane": "Lane 2 - Exit",
+                                "camera_id": payload.get("camera_id", 2)
+                            })
                         ))
                         db.commit()
                         
@@ -854,11 +875,18 @@ async def register_entry(
     billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
     db.add(billing)
 
+    import json
     db.add(AuditLog(
         action="ENTRY",
         plate_number=plate_number,
         operator=operator,
-        details=f"Live entry registered: {plate_number}. Awaiting billing confirmation.",
+        details=json.dumps({
+            "message": f"Live entry registered: {plate_number}. Awaiting billing confirmation.",
+            "image_url": plate_image_url,
+            "vehicle_image_url": vehicle_image_url,
+            "lane": "Lane 1 - Entry",
+            "camera_id": 1
+        })
     ))
     db.commit()
 
@@ -907,15 +935,18 @@ async def approve_exit(
 
     if not payment["paid"]:
         # Payment not confirmed — gate stays closed
+        import json
         db.add(AuditLog(
             action="EXIT_DENIED",
             plate_number=plate_number,
             operator=operator,
-            details=(
-                f"Exit denied — payment not confirmed. "
-                f"Billing API reachable: {payment['api_reachable']}. "
-                f"Reason: {payment['message']}"
-            ),
+            details=json.dumps({
+                "message": f"Exit denied — payment not confirmed. Reason: {payment['message']}",
+                "image_url": entry.plate_image_path,
+                "vehicle_image_url": entry.vehicle_image_path,
+                "lane": "Lane 2 - Exit",
+                "camera_id": 2
+            })
         ))
         db.commit()
         await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
@@ -956,16 +987,18 @@ async def approve_exit(
         )
         db.add(billing)
 
+    import json
     db.add(AuditLog(
         action="EXIT_APPROVED",
         plate_number=plate_number,
         operator=operator,
-        details=(
-            f"Exit approved. Duration: {duration_min} min. "
-            f"Amount: {payment['amount']}. "
-            f"Ref: {payment['reference']}. "
-            f"{payment['message']}"
-        ),
+        details=json.dumps({
+            "message": f"Exit approved. Duration: {duration_min} min. Amount: {payment['amount']}. Ref: {payment['reference']}.",
+            "image_url": entry.plate_image_path,
+            "vehicle_image_url": entry.vehicle_image_path,
+            "lane": "Lane 2 - Exit",
+            "camera_id": 2
+        })
     ))
     db.commit()
 

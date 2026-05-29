@@ -236,7 +236,7 @@ def get_dashboard(db: Session = Depends(get_db)):
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     active_records = (
-        db.query(Entry.entry_time, Vehicle.plate_number)
+        db.query(Entry.entry_time, Vehicle.plate_number, Entry.vehicle_image_path, Entry.plate_image_path, Entry.lane)
         .join(Vehicle)
         .filter(Entry.status == "IN")
         .all()
@@ -249,7 +249,10 @@ def get_dashboard(db: Session = Depends(get_db)):
     active_vehicles = [
         {
             "plate_number": r.plate_number,
-            "entry_time": r.entry_time
+            "entry_time": r.entry_time,
+            "vehicle_image_path": r.vehicle_image_path,
+            "plate_image_path": r.plate_image_path,
+            "lane": r.lane
         }
         for r in active_records
     ]
