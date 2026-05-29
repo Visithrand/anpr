@@ -39,6 +39,7 @@ from backend.routes import reports
 from backend.routes import auth as auth_router
 from backend.routes import billing as billing_router
 from backend.routes import health as health_router
+from backend.routes import gate as gate_router
 from backend.routes.auth import seed_default_admin
 
 log = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ app.include_router(reports.router)
 app.include_router(auth_router.router)
 app.include_router(billing_router.router)
 app.include_router(health_router.router)
+app.include_router(gate_router.router)
 
 # Serve plate crop images
 app.mount("/static", StaticFiles(directory="static"), name="static")

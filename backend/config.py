@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     )
     RELAY_TYPE: str = Field(
         default="http",
-        description="Relay backend type: 'http', 'usb', 'gpio', 'simulated'",
+        description="Relay backend type: 'http', 'usb', 'gpio', 'simulated', 'modbus'",
     )
     RELAY_PORT: str = Field(
         default="",
@@ -236,7 +236,7 @@ class Settings(BaseSettings):
     @field_validator("RELAY_TYPE")
     @classmethod
     def validate_relay_type(cls, v: str) -> str:
-        allowed = {"http", "usb", "gpio", "simulated"}
+        allowed = {"http", "usb", "gpio", "simulated", "modbus"}
         v = v.lower().strip()
         if v not in allowed:
             raise ValueError(f"RELAY_TYPE must be one of {allowed}, got '{v}'")
