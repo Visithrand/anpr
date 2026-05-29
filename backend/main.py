@@ -179,6 +179,13 @@ app.include_router(health_router.router)
 # Serve plate crop images
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Mount uploads directory for images
+import os
+os.makedirs("/app/uploads/plates", exist_ok=True)
+os.makedirs("/app/uploads/vehicles", exist_ok=True)
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
 
 # ---------------------------------------------------------------------------
 # Root endpoint

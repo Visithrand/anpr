@@ -111,10 +111,17 @@ services:
       ENTRY_CAMERA_IDS: ${ENTRY_CAMERA_IDS:-1,2,3,4}
       EXIT_CAMERA_IDS: ${EXIT_CAMERA_IDS:-}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-anpr-os-secret-key-change-in-production-2026}
+      UPLOAD_DIR: /app/uploads
+      RELAY_IP: 192.168.0.10
+      RELAY_PORT: 502
+      RELAY_UNIT: 1
+      BILLING_MODE: auto
+      AUTO_ACCEPT_DELAY: 5
     ports:
       - "8000:8000"
     volumes:
       - ./logs:/app/logs
+      - ./uploads:/app/uploads
       - ./static/plates:/app/static/plates
       - ./snapshots:/app/snapshots
       - ./models:/app/models:ro
@@ -154,8 +161,15 @@ services:
       PLATE_CONFIDENCE_THRESHOLD: ${PLATE_CONFIDENCE_THRESHOLD:-0.35}
       ENTRY_CAMERA_IDS: ${ENTRY_CAMERA_IDS:-1,2,3,4}
       EXIT_CAMERA_IDS: ${EXIT_CAMERA_IDS:-}
+      UPLOAD_DIR: /app/uploads
+      RELAY_IP: 192.168.0.10
+      RELAY_PORT: 502
+      RELAY_UNIT: 1
+      BILLING_MODE: auto
+      AUTO_ACCEPT_DELAY: 5
     volumes:
       - ./logs:/app/logs
+      - ./uploads:/app/uploads
       - ./static/plates:/app/static/plates
       - ./snapshots:/app/snapshots
       - ./models:/app/models:ro

@@ -41,7 +41,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Create required directories
-RUN mkdir -p logs static/plates snapshots && \
+RUN mkdir -p logs static/plates snapshots /app/uploads/plates /app/uploads/vehicles && \
     chown -R anpr:anpr /app
 
 # Switch to non-root user

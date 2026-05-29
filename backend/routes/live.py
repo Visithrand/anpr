@@ -43,6 +43,8 @@ from sqlalchemy.orm import Session
 from backend.utils.database import get_db, SessionLocal
 from backend.models.models import Vehicle, Entry, Billing, AuditLog, CameraLog
 from backend.services.gate_trigger import open_exit_gate, open_entry_gate
+from relay_controller import barrier
+from billing_controller import billing_flow
 from backend.services.billing_service import check_payment_status
 from backend.utils.websocket import manager
 from backend.config import settings
@@ -436,15 +438,12 @@ class CameraManager:
                     ))
                     db.commit()
                     
-                # Trigger gate using sync relay controller directly
-                # (asyncio.run() crashes inside threads with an existing event loop)
-                try:
-                    from backend.services.relay_controller import get_relay_controller
-                    controller = get_relay_controller()
-                    controller.open_gate("entry")
-                    log.info("Entry gate triggered for %s", plate_number)
-                except Exception as gate_err:
-                    log.error("Failed to trigger entry gate: %s", gate_err)
+                    record = {
+                        "entry_id": entry.id,
+                        "detected_at": payload.get("timestamp", datetime.utcnow().isoformat()),
+                        "camera_id": payload.get("camera_id", 1)
+                    }
+                    billing_flow(plate_number, record)
                     
             except Exception as e:
                 log.error("Error in entry events loop: %s", e)

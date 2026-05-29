@@ -299,12 +299,19 @@ class OCRProcessor:
         self._mark_plate_published(plate_text)
 
         # 9. Save snapshots (reuse the crop from step 4)
-        fname = f"{plate_text}_{uuid.uuid4().hex[:6]}.jpg"
-        fpath = os.path.join(settings.SNAPSHOT_DIR, fname)
+        UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
+        os.makedirs(f"{UPLOAD_DIR}/plates", exist_ok=True)
+        os.makedirs(f"{UPLOAD_DIR}/vehicles", exist_ok=True)
+
+        safe_plate = plate_text.replace(" ", "_")
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        fname = f"plate_{safe_plate}_{timestamp_str}_{uuid.uuid4().hex[:4]}.jpg"
+        fpath = os.path.join(f"{UPLOAD_DIR}/plates", fname)
         cv2.imwrite(fpath, crop)
 
-        full_fname = f"full_{plate_text}_{uuid.uuid4().hex[:6]}.jpg"
-        full_fpath = os.path.join(settings.SNAPSHOT_DIR, full_fname)
+        full_fname = f"vehicle_{safe_plate}_{timestamp_str}_{uuid.uuid4().hex[:4]}.jpg"
+        full_fpath = os.path.join(f"{UPLOAD_DIR}/vehicles", full_fname)
         cv2.imwrite(full_fpath, frame)
 
         # 10. Check DB for vehicle status (IN / OUT)
@@ -323,8 +330,8 @@ class OCRProcessor:
         detection_payload = {
             "plate_text": plate_text,
             "confidence": round(conf, 3),
-            "image_url": f"/static/plates/{fname}",
-            "vehicle_image_url": f"/static/plates/{full_fname}",
+            "image_url": f"/uploads/plates/{fname}",
+            "vehicle_image_url": f"/uploads/vehicles/{full_fname}",
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)),
             "camera_id": camera_id,
             "camera_label": camera_label,
@@ -349,8 +356,8 @@ class OCRProcessor:
             "plate_number": plate_text,
             "camera_id": camera_id,
             "timestamp": timestamp,
-            "image_url": f"/static/plates/{fname}",
-            "vehicle_image_url": f"/static/plates/{full_fname}",
+            "image_url": f"/uploads/plates/{fname}",
+            "vehicle_image_url": f"/uploads/vehicles/{full_fname}",
         })
 
         entry_cameras = settings.entry_camera_set

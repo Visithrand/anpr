@@ -49,3 +49,5 @@ redis>=5.0
 
 # --- Optional: GPIO Relay support (Raspberry Pi) ---
 # RPi.GPIO
+
+pymodbus==2.5.3
