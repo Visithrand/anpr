@@ -185,6 +185,8 @@ class Settings(BaseSettings):
         default=60, ge=10,
         description="Seconds to wait before retrying after circuit breaker opens",
     )
+    EXIT_BILLING_API: str = Field(default="", description="SAP OData API URL for exit billing")
+    SAP_CLIENT: str = Field(default="120", description="SAP client number")
 
     # ------------------------------------------------------------------
     # Auth / Security

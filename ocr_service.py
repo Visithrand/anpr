@@ -87,13 +87,112 @@ def preprocess(img):
 # -----------------------
 # POST-OCR TEXT CLEANING
 # -----------------------
+
+# Indian state codes — used to correct OCR character confusions
+INDIAN_STATES = {
+    "AN", "AP", "AR", "AS", "BR", "CG", "CH", "DD", "DL", "GA",
+    "GJ", "HP", "HR", "JH", "JK", "KA", "KL", "LA", "LD", "MH",
+    "ML", "MN", "MP", "MZ", "NL", "OD", "PB", "PY", "RJ", "SK",
+    "TN", "TR", "TS", "UK", "UP", "WB",
+}
+
+# Digit → possible letter substitutions (for state code positions)
+DIGIT_TO_LETTER = {
+    '0': ['O', 'D', 'Q', 'B'],
+    '1': ['I', 'L'],
+    '2': ['Z'],
+    '3': ['E'],
+    '4': ['A'],
+    '5': ['S'],
+    '6': ['G', 'B'],
+    '7': ['T'],
+    '8': ['B'],
+    '9': ['G', 'P', 'B'],
+}
+
+# Letter → digit substitutions (for district code / registration number)
+LETTER_TO_DIGIT = {
+    'O': '0', 'D': '0', 'Q': '0',
+    'I': '1', 'L': '1',
+    'Z': '2',
+    'E': '3',
+    'A': '4',
+    'S': '5',
+    'G': '6',
+    'T': '7',
+    'B': '8',
+    'P': '9',
+}
+
+
+def _fix_ocr_confusions(text: str) -> str:
+    """
+    Fix OCR character confusions using Indian plate structure knowledge.
+
+    Indian plates: [2 letters][1-2 digits][0-3 letters][1-4 digits]
+    OCR confuses visually similar chars: B↔8, D↔0, S↔5, I↔1, etc.
+
+    Example: 'P811CRO612' → 'PB11CRO612' (8→B in state code position)
+    """
+    if not text or len(text) < 7:
+        return text
+
+    # --- Fix state code (first 2 chars must be letters) ---
+    c0, c1 = text[0], text[1]
+    rest = text[2:]
+
+    if not (c0.isalpha() and c1.isalpha() and (c0 + c1) in INDIAN_STATES):
+        candidates_0 = [c0] if c0.isalpha() else DIGIT_TO_LETTER.get(c0, [])
+        candidates_1 = [c1] if c1.isalpha() else DIGIT_TO_LETTER.get(c1, [])
+        if c0.isalpha():
+            candidates_0 = [c0]
+        if c1.isalpha():
+            candidates_1 = [c1]
+
+        for ch0 in candidates_0:
+            for ch1 in candidates_1:
+                if (ch0 + ch1) in INDIAN_STATES:
+                    text = ch0 + ch1 + rest
+                    break
+            else:
+                continue
+            break
+
+    # --- Fix district code (positions 2-3 must be digits) ---
+    chars = list(text)
+    for pos in [2, 3]:
+        if pos < len(chars) and chars[pos].isalpha():
+            replacement = LETTER_TO_DIGIT.get(chars[pos])
+            if replacement:
+                chars[pos] = replacement
+
+    # --- Fix trailing registration number (last digits) ---
+    i = len(chars) - 1
+    end_limit = max(4, len(chars) - 4)
+    while i >= end_limit:
+        if chars[i].isdigit():
+            i -= 1
+            continue
+        elif chars[i].isalpha() and LETTER_TO_DIGIT.get(chars[i]):
+            left_is_digit = (i - 1 >= 0 and chars[i - 1].isdigit())
+            right_is_digit = (i + 1 < len(chars) and chars[i + 1].isdigit())
+            if left_is_digit and right_is_digit:
+                chars[i] = LETTER_TO_DIGIT[chars[i]]
+                i -= 1
+                continue
+        break
+
+    return ''.join(chars)
+
+
 def clean_ocr_text(text: str) -> str:
     """
     Clean raw PaddleOCR output to extract only valid plate characters.
     
     Handles:
     - Strips all non-alphanumeric characters (spaces, dashes, dots, etc.)
-    - Removes common OCR misread characters at edges
+    - Fixes OCR character confusions (B↔8, D↔0, S↔5, etc.) using
+      Indian plate format knowledge
     - Tries to extract an Indian plate pattern if possible
     """
     if not text:
@@ -104,6 +203,9 @@ def clean_ocr_text(text: str) -> str:
     
     if not cleaned:
         return ""
+    
+    # Fix OCR character confusions BEFORE pattern matching
+    cleaned = _fix_ocr_confusions(cleaned)
     
     # Try to extract Indian plate pattern:
     # Format: SS DD [S{0,3}] DDDD  (e.g., DL 7S CB 4578 or KA 01 AB 1234)

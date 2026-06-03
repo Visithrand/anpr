@@ -491,27 +491,56 @@ class CameraManager:
                         log.warning("Exit failed: No active entry for vehicle %s", plate_number)
                         continue
                         
+                    ent_date_str = entry.entry_time.strftime("%Y%m%d")
+                    ent_time_str = entry.entry_time.strftime("%H%M%S")
+                        
                 # Process exit synchronously (no asyncio.run — we're in a thread)
                 try:
-                    # For auto-exit, use sync HTTP call to billing API
                     import httpx
-                    billing_url = f"{settings.BILLING_API_URL.rstrip('/')}/payment/status"
-                    payment = {"paid": False, "amount": 0.0, "reference": "", "message": "API unreachable", "api_reachable": False}
+                    from urllib.parse import quote
+                    
+                    billing_url = settings.EXIT_BILLING_API
+                    sap_client = settings.SAP_CLIENT
+                    
+                    payment_verified = False
+                    payment_msg = "SAP API unreachable"
+                    amount = 0.0
                     
                     try:
-                        with httpx.Client(timeout=8.0) as client:
-                            resp = client.get(billing_url, params={"plate": plate_number})
+                        # Construct OData filter
+                        filter_str = f"VEH_NO eq '{plate_number}' and ENT_DATE eq '{ent_date_str}' and ENT_TIME eq '{ent_time_str}' and CHECK_OUT eq 'X'"
+                        params = {
+                            "$filter": filter_str,
+                            "$format": "json",
+                            "sap-client": sap_client
+                        }
+                        
+                        # Use a relatively long timeout since SAP OData calls can occasionally take a few seconds
+                        with httpx.Client(timeout=10.0) as client:
+                            log.info("Calling SAP Exit API for %s: %s", plate_number, filter_str)
+                            resp = client.get(billing_url, params=params)
+                            
                             if resp.status_code == 200:
                                 data = resp.json()
-                                payment = {
-                                    "paid": bool(data.get("paid", False)),
-                                    "amount": float(data.get("amount", 0.0)),
-                                    "reference": str(data.get("reference", "")),
-                                    "message": str(data.get("message", "")),
-                                    "api_reachable": True,
-                                }
+                                # OData usually wraps arrays in d.results
+                                results = data.get("d", {}).get("results", [])
+                                
+                                if results and len(results) > 0:
+                                    payment_verified = True
+                                    payment_msg = "Billing verified by SAP"
+                                    # Optional: extract amount if it exists in the response
+                                    # amount = float(results[0].get("AMOUNT", 0.0))
+                                else:
+                                    payment_verified = False
+                                    payment_msg = "SAP returned empty data (billing not completed)"
+                            else:
+                                payment_verified = False
+                                payment_msg = f"SAP API Error: HTTP {resp.status_code}"
+                                log.error("SAP API Error for %s: HTTP %s - %s", plate_number, resp.status_code, resp.text)
+                                
                     except Exception as billing_err:
-                        log.warning("Billing API unreachable for auto-exit %s: %s", plate_number, billing_err)
+                        log.warning("SAP Billing API unreachable for auto-exit %s: %s", plate_number, billing_err)
+                        payment_msg = f"API unreachable: {billing_err}"
                     
                     with SessionLocal() as db:
                         db_vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
@@ -524,14 +553,14 @@ class CameraManager:
                             log.warning("Exit event: no active entry for %s", plate_number)
                             continue
                         
-                        if not payment["paid"]:
+                        if not payment_verified:
                             import json
                             db.add(AuditLog(
                                 action="EXIT_DENIED",
                                 plate_number=plate_number,
                                 operator="ANPR-Auto",
                                 details=json.dumps({
-                                    "message": f"Auto exit denied — payment not confirmed: {payment['message']}",
+                                    "message": f"Auto exit denied — {payment_msg}",
                                     "image_url": db_entry.plate_image_path,
                                     "vehicle_image_url": db_entry.vehicle_image_path,
                                     "lane": "Lane 2 - Exit",
@@ -539,7 +568,7 @@ class CameraManager:
                                 })
                             ))
                             db.commit()
-                            log.warning("Auto-exit denied for %s — payment pending.", plate_number)
+                            log.warning("Auto-exit denied for %s — %s", plate_number, payment_msg)
                             continue
                             
                         exit_time = datetime.utcnow()
@@ -553,14 +582,12 @@ class CameraManager:
                         billing = db_entry.billing
                         if billing:
                             billing.paid = True
-                            billing.amount = payment["amount"]
-                            billing.billing_reference = payment["reference"]
+                            billing.amount = amount
                         else:
                             billing = Billing(
                                 entry_id=db_entry.id,
-                                amount=payment["amount"],
+                                amount=amount,
                                 paid=True,
-                                billing_reference=payment["reference"],
                             )
                             db.add(billing)
                             
@@ -570,7 +597,7 @@ class CameraManager:
                             plate_number=plate_number,
                             operator="ANPR-Auto",
                             details=json.dumps({
-                                "message": f"Auto exit approved. Duration: {duration_min} min. Amount: {payment['amount']}.",
+                                "message": f"Auto exit approved. Duration: {duration_min} min.",
                                 "image_url": db_entry.plate_image_path,
                                 "vehicle_image_url": db_entry.vehicle_image_path,
                                 "lane": "Lane 2 - Exit",
