@@ -22,7 +22,8 @@ class PlateDetector:
 
     def _parse(self, result, orig_w, orig_h):
         pred = result[0].T  # [8400, 5]
-        boxes = []
+        raw_boxes = []
+        confidences = []
         for row in pred:
             x, y, w, h, score = row
             if score < self.conf:
@@ -33,7 +34,21 @@ class PlateDetector:
             y2 = int((y + h / 2) * orig_h / self.input_size)
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(orig_w, x2), min(orig_h, y2)
-            boxes.append((x1, y1, x2, y2, float(score)))
+            raw_boxes.append([x1, y1, x2 - x1, y2 - y1])  # [x, y, w, h] for NMS
+            confidences.append(float(score))
+
+        if not raw_boxes:
+            return []
+
+        # Apply OpenCV NMS to suppress overlapping detections of the same plate
+        indices = cv2.dnn.NMSBoxes(raw_boxes, confidences, self.conf, 0.4)
+
+        boxes = []
+        for i in indices:
+            idx = i if isinstance(i, int) else i[0]
+            bx, by, bw, bh = raw_boxes[idx]
+            boxes.append((bx, by, bx + bw, by + bh, confidences[idx]))
+
         boxes.sort(key=lambda b: b[4], reverse=True)
         return boxes
 

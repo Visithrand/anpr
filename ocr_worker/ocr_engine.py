@@ -57,9 +57,9 @@ class OCREngine:
     """
     Sends cropped plate images to the PaddleOCR API microservice.
     
-    Uses best-of-3 consensus: sends the original crop + 2 augmented versions
-    (brightened, sharpened) and picks the most common valid result.
-    This eliminates random OCR noise that varies between reads.
+    Uses best-of-4 consensus: sends the original crop + 3 augmented versions
+    (brightened, sharpened, high-contrast) and picks the most common valid result.
+    Requires at least 2 agreeing reads (exact or fuzzy) to accept a result.
     """
 
     def __init__(self):
@@ -78,23 +78,94 @@ class OCREngine:
             log.debug("OCR request failed: %s", e)
         return ""
 
-    def read_plate(self, crop: np.ndarray, max_retries: int = 2) -> str:
+    @staticmethod
+    def _plate_similarity(a: str, b: str) -> float:
+        """Character-level LCS similarity between two plate strings (0.0–1.0)."""
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        n, m = len(a), len(b)
+        if abs(n - m) / max(n, m) > 0.4:
+            return 0.0
+        dp = [[0] * (m + 1) for _ in range(n + 1)]
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                if a[i - 1] == b[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                else:
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+        lcs_len = dp[n][m]
+        return (2.0 * lcs_len) / (n + m)
+
+    def _find_best_consensus(self, results: List[str]) -> str:
         """
-        Best-of-3 consensus OCR read.
+        Find the best consensus result from a list of OCR reads.
+
+        1. Exact match: if 2+ reads are identical, return that text.
+        2. Fuzzy match: if 2+ reads are >=80% similar, pick the longest
+           (most complete) one from the matching group.
+        3. No consensus: return empty string (reject the read).
+        """
+        if not results:
+            return ""
+
+        # 1. Try exact consensus
+        counter = Counter(results)
+        best_text, best_count = counter.most_common(1)[0]
+        if best_count >= 2:
+            log.debug("OCR exact consensus (%d/%d agree): %s", best_count, len(results), best_text)
+            return best_text
+
+        # 2. Try fuzzy consensus — group reads that are >=80% similar
+        FUZZY_THRESHOLD = 0.80
+        for i in range(len(results)):
+            group = [results[i]]
+            for j in range(len(results)):
+                if i == j:
+                    continue
+                if self._plate_similarity(results[i], results[j]) >= FUZZY_THRESHOLD:
+                    group.append(results[j])
+
+            if len(group) >= 2:
+                # Pick the longest result in the group (most complete plate)
+                best = max(group, key=len)
+                log.debug(
+                    "OCR fuzzy consensus (%d/%d similar): %s (group: %s)",
+                    len(group), len(results), best, group,
+                )
+                return best
+
+        # 3. No consensus — reject entirely
+        log.debug("OCR no consensus, rejecting. All results: %s", results)
+        return ""
+
+    def read_plate(self, crop: np.ndarray, max_retries: int = 1) -> str:
+        """
+        Best-of-4 consensus OCR read.
         
-        Sends the crop in 3 variants (original, brightened, sharpened) to the
-        PaddleOCR service. Takes the most common valid result as the final answer.
+        Sends the crop in 4 variants (original, brightened, sharpened,
+        high-contrast grayscale) to the PaddleOCR service.
         
-        If consensus fails (all different), falls back to the first valid result.
+        Requires at least 2 reads to agree (exact or fuzzy) before
+        accepting a result. If no pair agrees, returns empty string.
         """
         if crop is None or crop.size == 0:
             return ""
 
-        # Generate 3 variants of the crop
+        # Generate a high-contrast grayscale variant
+        def _high_contrast(img: np.ndarray) -> np.ndarray:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+            enhanced = clahe.apply(gray)
+            return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+
+        # Generate 4 variants of the crop
         variants = [
             crop,                    # Original
             _brighten(crop, 30),     # Brightened
             _sharpen(crop),          # Sharpened
+            _high_contrast(crop),    # High-contrast grayscale
         ]
 
         results: List[str] = []
@@ -106,24 +177,22 @@ class OCREngine:
                     results.append(normalized)
 
         if not results:
-            # All 3 failed — do a single retry with original
+            # All 4 failed — do a single retry with original
             for attempt in range(max_retries):
                 text = self._send_single(crop)
                 if text:
                     normalized = normalize_plate(text)
                     if is_valid_plate(normalized):
-                        return normalized
+                        results.append(normalized)
+                        break
                 time.sleep(0.3 * (attempt + 1))
+
+        if not results:
             return ""
 
-        # Consensus: pick the most common result
-        counter = Counter(results)
-        best_text, best_count = counter.most_common(1)[0]
-        
-        if best_count >= 2:
-            log.debug("OCR consensus (%d/3 agree): %s", best_count, best_text)
-        else:
-            log.debug("OCR no consensus, using first valid: %s (all results: %s)", 
-                      best_text, results)
+        # If only 1 result came back, we can't establish consensus — reject
+        if len(results) == 1:
+            log.debug("OCR only 1 valid read ('%s'), no consensus possible — rejecting.", results[0])
+            return ""
 
-        return best_text
+        return self._find_best_consensus(results)

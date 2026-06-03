@@ -35,6 +35,34 @@ from ocr_worker.ocr_engine import OCREngine, is_valid_plate
 log = logging.getLogger(__name__)
 
 
+def _plate_similarity(a: str, b: str) -> float:
+    """
+    Character-level similarity between two plate strings (0.0 to 1.0).
+
+    Uses a simple longest-common-subsequence ratio rather than
+    pulling in an external library.  This is O(n*m) but plates are
+    at most ~12 chars so it's negligible.
+    """
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    n, m = len(a), len(b)
+    # Quick reject: length differs by more than 40%
+    if abs(n - m) / max(n, m) > 0.4:
+        return 0.0
+    # LCS via DP
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    lcs_len = dp[n][m]
+    return (2.0 * lcs_len) / (n + m)
+
+
 def get_iou(boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, int]) -> float:
     """Calculate intersection over union of two bounding boxes."""
     xA = max(boxA[0], boxB[0])
@@ -173,18 +201,29 @@ class OCRProcessor:
 
     def _is_plate_recently_published(self, plate_text: str, cooldown: float = None) -> bool:
         """
-        Check if this plate was recently published (in-memory check).
-        
-        This is faster than the Redis cooldown check and prevents the same plate
-        from being published multiple times within a short window even if
-        the Redis cooldown hasn't been set yet.
+        Check if this plate (or a fuzzy match) was recently published.
+
+        Uses both exact and fuzzy matching (70 %+ similarity) so that
+        OCR variants like P811CRO612 / P911CRO612 are treated as the
+        same physical plate.
         """
         if cooldown is None:
             cooldown = float(settings.PLATE_COOLDOWN_SECONDS)
-        
-        last_published = self._published_plates.get(plate_text)
-        if last_published and (time.time() - last_published) < cooldown:
-            return True
+
+        now = time.time()
+        for pub_text, pub_time in self._published_plates.items():
+            if now - pub_time >= cooldown:
+                continue
+            # Exact match
+            if pub_text == plate_text:
+                return True
+            # Fuzzy match — 70 % similarity threshold
+            if _plate_similarity(pub_text, plate_text) >= 0.70:
+                log.debug(
+                    "Fuzzy dedup: '%s' matches recently published '%s' (sim=%.2f)",
+                    plate_text, pub_text, _plate_similarity(pub_text, plate_text),
+                )
+                return True
         return False
 
     def _mark_plate_published(self, plate_text: str):
@@ -254,19 +293,28 @@ class OCRProcessor:
         x1, y1, x2, y2, conf = best_box
 
         # 3. Spatial overlap check — SKIP ENTIRELY if this box matches a recent detection
+        #    Uses IoU 0.3 (lenient) so even slightly shifted boxes from the same
+        #    plate region are caught.
         current_box_coords = (x1, y1, x2, y2)
         for tracked_box, tracked_text, tracked_time in self._recent_ocr_boxes[camera_id]:
             iou = get_iou(current_box_coords, tracked_box)
-            if iou > 0.5:
+            if iou > 0.3:
                 # This plate location was already processed — skip completely
                 log.debug("Spatial dedup: box overlaps with tracked plate %s (IoU=%.2f), skipping.",
                          tracked_text, iou)
                 return  # <-- RETURN, not continue. Don't publish again.
 
+        # 3b. Reserve this spatial slot BEFORE OCR to prevent race conditions
+        #     (other frames seeing the same box while OCR is running)
+        placeholder_entry = (current_box_coords, "__processing__", now)
+        self._recent_ocr_boxes[camera_id].append(placeholder_entry)
+
         # 4. Crop plate ONCE and reuse for both OCR and snapshot saving
         crop = self.detector.crop_plate(frame, best_box, margin=10)
         
         if crop is None or crop.size == 0:
+            # Remove the placeholder
+            self._recent_ocr_boxes[camera_id].remove(placeholder_entry)
             return
 
         # 5. Run OCR (consensus reads)
@@ -275,6 +323,8 @@ class OCRProcessor:
         ocr_latency = time.time() - ocr_start
         
         if not raw_text or not is_valid_plate(raw_text):
+            # Keep the placeholder to suppress further OCR on this box
+            # (if OCR can't read it, re-running on the next frame won't help)
             return
         
         plate_text = normalize_plate(raw_text)
@@ -282,10 +332,14 @@ class OCRProcessor:
         if not plate_text:
             return
 
-        # 6. Record this box+text in spatial tracking
-        self._recent_ocr_boxes[camera_id].append((current_box_coords, plate_text, now))
+        # 6. Update the placeholder with the actual plate text
+        try:
+            idx = self._recent_ocr_boxes[camera_id].index(placeholder_entry)
+            self._recent_ocr_boxes[camera_id][idx] = (current_box_coords, plate_text, now)
+        except ValueError:
+            self._recent_ocr_boxes[camera_id].append((current_box_coords, plate_text, now))
 
-        # 7. In-memory dedup check (fast path)
+        # 7. In-memory dedup check (fast path — includes fuzzy matching)
         if self._is_plate_recently_published(plate_text):
             log.debug("Plate %s from camera %d is in local cooldown, skipping.", plate_text, camera_id)
             return
