@@ -396,53 +396,65 @@ class CameraManager:
                     
                 log.info("Auto-processing Entry Event for: %s", plate_number)
                 
-                with SessionLocal() as db:
-                    vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
-                    if not vehicle:
-                        vehicle = Vehicle(plate_number=plate_number)
-                        db.add(vehicle)
-                        db.commit()
-                        db.refresh(vehicle)
+                # 1. ALWAYS OPEN THE ENTRY GATE FIRST (Bypass all checks)
+                try:
+                    from backend.services.relay_controller import get_relay_controller
+                    get_relay_controller().open_gate("entry")
+                    log.info("ENTRY GATE allows all vehicles. SAP and duplicate checks are bypassed. Gate opened for %s", plate_number)
+                except Exception as gate_err:
+                    log.error("Failed to open entry gate for %s: %s", plate_number, gate_err)
+                
+                # 2. Try to log to DB (do not block gate opening if this fails)
+                try:
+                    with SessionLocal() as db:
+                        vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
+                        if not vehicle:
+                            vehicle = Vehicle(plate_number=plate_number)
+                            db.add(vehicle)
+                            db.commit()
+                            db.refresh(vehicle)
+                            
+                        entry = Entry(
+                            plate_number=plate_number,
+                            vehicle_id=vehicle.id,
+                            entry_time=datetime.utcnow(),
+                            status="IN",
+                            payment_status="PENDING",
+                            plate_image_path=image_url,
+                            vehicle_image_path=vehicle_image_url,
+                            location="Main Gate",
+                            lane="Lane 1 - Entry",
+                        )
+                        db.add(entry)
+                        db.flush()
                         
-                    # Allow all vehicles — no duplicate check per client requirement
-                    entry = Entry(
-                        plate_number=plate_number,
-                        vehicle_id=vehicle.id,
-                        entry_time=datetime.utcnow(),
-                        status="IN",
-                        payment_status="PENDING",
-                        plate_image_path=image_url,
-                        vehicle_image_path=vehicle_image_url,
-                        location="Main Gate",
-                        lane="Lane 1 - Entry",
-                    )
-                    db.add(entry)
-                    db.flush()
-                    
-                    billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
-                    db.add(billing)
-                    
-                    import json
-                    db.add(AuditLog(
-                        action="ENTRY",
-                        plate_number=plate_number,
-                        operator="ANPR-Auto",
-                        details=json.dumps({
-                            "message": "Auto vehicle entry registered at Main Gate. Awaiting billing.",
-                            "image_url": image_url,
-                            "vehicle_image_url": vehicle_image_url,
-                            "lane": "Lane 1 - Entry",
+                        billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
+                        db.add(billing)
+                        
+                        import json
+                        db.add(AuditLog(
+                            action="ENTRY",
+                            plate_number=plate_number,
+                            operator="ANPR-Auto",
+                            details=json.dumps({
+                                "message": "Auto vehicle entry registered at Main Gate. Awaiting billing.",
+                                "image_url": image_url,
+                                "vehicle_image_url": vehicle_image_url,
+                                "lane": "Lane 1 - Entry",
+                                "camera_id": payload.get("camera_id", 1)
+                            })
+                        ))
+                        db.commit()
+                        
+                        record = {
+                            "entry_id": entry.id,
+                            "detected_at": payload.get("timestamp", datetime.utcnow().isoformat()),
                             "camera_id": payload.get("camera_id", 1)
-                        })
-                    ))
-                    db.commit()
-                    
-                    record = {
-                        "entry_id": entry.id,
-                        "detected_at": payload.get("timestamp", datetime.utcnow().isoformat()),
-                        "camera_id": payload.get("camera_id", 1)
-                    }
-                    billing_flow(plate_number, record)
+                        }
+                        billing_flow(plate_number, record)
+                        
+                except Exception as db_err:
+                    log.error("DB logging failed for entry %s: %s", plate_number, db_err)
                     
             except Exception as e:
                 log.error("Error in entry events loop: %s", e)
@@ -864,58 +876,80 @@ async def register_entry(
 ):
     """
     Register a detected plate as a vehicle entry.
-    Called from the Live Dashboard when operator clicks 'Register Entry'.
-    Entry boom barrier is opened immediately.
+    ENTRY GATE allows all vehicles. SAP and duplicate checks are bypassed.
+    Gate opens immediately, even if DB logging fails.
     """
-    vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
-    if not vehicle:
-        vehicle = Vehicle(plate_number=plate_number)
-        db.add(vehicle)
+    # 1. ALWAYS OPEN ENTRY GATE FIRST (Bypass all checks)
+    gate_status = "opened"
+    gate_details = {}
+    try:
+        gate_details = await open_entry_gate()
+        log.info(f"ENTRY GATE allows all vehicles. Gate opened for {plate_number}")
+    except Exception as gate_err:
+        log.error(f"Failed to open entry gate for {plate_number}: {gate_err}")
+        gate_status = "error"
+        gate_details = {"status": "error"}
+
+    # 2. Try to log to DB (do not block gate opening if this fails)
+    try:
+        vehicle = db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
+        if not vehicle:
+            vehicle = Vehicle(plate_number=plate_number)
+            db.add(vehicle)
+            db.commit()
+            db.refresh(vehicle)
+
+        entry = Entry(
+            plate_number=plate_number,
+            vehicle_id=vehicle.id,
+            entry_time=datetime.utcnow(),
+            status="IN",
+            payment_status="PENDING",
+            plate_image_path=plate_image_url,
+            vehicle_image_path=vehicle_image_url,
+        )
+        db.add(entry)
+        db.flush()
+
+        # Create pending billing record
+        billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
+        db.add(billing)
+
+        import json
+        db.add(AuditLog(
+            action="ENTRY",
+            plate_number=plate_number,
+            operator=operator,
+            details=json.dumps({
+                "message": f"Live entry registered: {plate_number}. Awaiting billing confirmation.",
+                "image_url": plate_image_url,
+                "vehicle_image_url": vehicle_image_url,
+                "lane": "Lane 1 - Entry",
+                "camera_id": 1
+            })
+        ))
         db.commit()
-        db.refresh(vehicle)
 
-    # Allow all vehicles — no duplicate check per client requirement
-    entry = Entry(
-        plate_number=plate_number,
-        vehicle_id=vehicle.id,
-        entry_time=datetime.utcnow(),
-        status="IN",
-        payment_status="PENDING",
-        plate_image_path=plate_image_url,
-        vehicle_image_path=vehicle_image_url,
-    )
-    db.add(entry)
-    db.flush()
+        await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
 
-    # Create pending billing record
-    billing = Billing(entry_id=entry.id, amount=0.0, paid=False)
-    db.add(billing)
+        return {
+            "message": "Entry registered — entry gate opened",
+            "plate_number": plate_number,
+            "status": "IN",
+            "payment_status": "PENDING",
+            "gate": gate_details,
+        }
 
-    import json
-    db.add(AuditLog(
-        action="ENTRY",
-        plate_number=plate_number,
-        operator=operator,
-        details=json.dumps({
-            "message": f"Live entry registered: {plate_number}. Awaiting billing confirmation.",
-            "image_url": plate_image_url,
-            "vehicle_image_url": vehicle_image_url,
-            "lane": "Lane 1 - Entry",
-            "camera_id": 1
-        })
-    ))
-    db.commit()
-
-    gate = await open_entry_gate()
-    await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
-
-    return {
-        "message": "Entry registered — entry gate opened",
-        "plate_number": plate_number,
-        "status": "IN",
-        "payment_status": "PENDING",
-        "gate": gate,
-    }
+    except Exception as db_err:
+        log.error(f"DB logging failed for entry {plate_number}, but gate was opened. Error: {db_err}")
+        db.rollback()
+        return {
+            "message": "Gate opened, but DB logging failed",
+            "plate_number": plate_number,
+            "status": "UNKNOWN",
+            "payment_status": "UNKNOWN",
+            "gate": gate_details,
+        }
 
 
 @router.post("/approve-exit")

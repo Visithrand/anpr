@@ -20,9 +20,9 @@ def billing_flow(plate_text: str, record: dict):
 
 
 def _open_barrier_immediately(plate_text: str, record: dict):
-    """Open entry barrier immediately for all vehicles."""
-    print(f"[BILLING] ✅ Opening entry barrier immediately for {plate_text}")
-    barrier.open_barrier(gate_type="entry", duration_ms=3000)
+    """Entry barrier is now opened directly by the route. No action needed here."""
+    print(f"[BILLING] Entry gate already opened for {plate_text} by the main route.")
+    # barrier.open_barrier(gate_type="entry", duration_ms=3000)
 
 
 def _open_barrier_and_log(plate_text: str, record: dict):

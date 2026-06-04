@@ -35,11 +35,25 @@ async def vehicle_entry(
     db: Session = Depends(get_db),
 ):
     """
-    Register vehicle entry and open the entry boom barrier.
-    Called by admin panel or directly by the ANPR camera pipeline.
+    ENTRY GATE allows all vehicles. SAP and duplicate checks are bypassed.
+    Gate opens immediately, even if DB logging fails.
     """
+    import logging
+    log = logging.getLogger(__name__)
+
+    # 1. ALWAYS OPEN ENTRY GATE FIRST (Bypass all checks)
+    gate_status = "opened"
+    gate_details = {}
     try:
-        # 1. Auto-register vehicle if not in DB
+        gate_details = await open_entry_gate()
+        log.info(f"ENTRY GATE allows all vehicles. Gate opened for {plate_number}")
+    except Exception as gate_err:
+        log.error(f"Failed to open entry gate for {plate_number}: {gate_err}")
+        gate_status = "error"
+        gate_details = {"status": "error"}
+
+    # 2. Try to log to DB (do not block gate opening if this fails)
+    try:
         vehicle = db.query(Vehicle).filter(
             Vehicle.plate_number == plate_number
         ).first()
@@ -50,7 +64,6 @@ async def vehicle_entry(
             db.commit()
             db.refresh(vehicle)
 
-        # 2. Create entry record (allow all vehicles — no duplicate check)
         new_entry = Entry(
             plate_number=plate_number,
             vehicle_id=vehicle.id,
@@ -61,9 +74,8 @@ async def vehicle_entry(
             lane=lane,
         )
         db.add(new_entry)
-        db.flush()  # get new_entry.id without full commit
+        db.flush()
 
-        # 4. Create billing record — amount=0.0 until third-party confirms
         billing = Billing(
             entry_id=new_entry.id,
             amount=0.0,
@@ -71,7 +83,6 @@ async def vehicle_entry(
         )
         db.add(billing)
 
-        # 5. Audit log
         log_entry = AuditLog(
             action="ENTRY",
             plate_number=plate_number,
@@ -81,10 +92,6 @@ async def vehicle_entry(
         db.add(log_entry)
         db.commit()
 
-        # 6. Trigger entry gate open
-        gate = await open_entry_gate()
-
-        # 7. Broadcast real-time dashboard update
         await manager.broadcast('{"type": "REFRESH_DASHBOARD"}')
 
         return {
@@ -93,15 +100,17 @@ async def vehicle_entry(
             "entry_id": new_entry.id,
             "status": "IN",
             "payment_status": "PENDING",
-            "gate": gate,
+            "gate": gate_details,
         }
 
-    except HTTPException as he:
-        db.rollback()
-        raise he
-
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        log.error(f"Failed to log entry to DB for {plate_number}, but gate was opened. Error: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return success since gate was opened
+        return {
+            "message": "Gate opened, but DB logging failed",
+            "plate_number": plate_number,
+            "status": "UNKNOWN",
+            "payment_status": "UNKNOWN",
+            "gate": gate_details,
+        }
