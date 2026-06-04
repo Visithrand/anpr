@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const IS_DEV = import.meta.env.DEV;
-const API_URL = IS_DEV ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_URL = IS_DEV ? 'http://127.0.0.1:8005' : `${window.location.protocol}//${window.location.hostname}:8005`;
 
 const api = axios.create({
   baseURL: API_URL,

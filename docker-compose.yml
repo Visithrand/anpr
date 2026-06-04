@@ -122,7 +122,7 @@ services:
       BILLING_MODE: auto
       AUTO_ACCEPT_DELAY: 5
     ports:
-      - "8000:8000"
+      - "8005:8005"
     volumes:
       - ./logs:/app/logs
       - ./uploads:/app/uploads
@@ -131,7 +131,7 @@ services:
       - ./models:/app/models:ro
       - ./backend/models/plate_det:/app/backend/models/plate_det:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/system/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/system/health')"]
       interval: 30s
       timeout: 10s
       start_period: 30s

@@ -48,16 +48,16 @@ RUN mkdir -p logs static/plates snapshots /app/uploads/plates /app/uploads/vehic
 # USER anpr
 
 # Expose the API port
-EXPOSE 8000
+EXPOSE 8005
 
 # Health check — uses the /system/health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import httpx; r = httpx.get('http://localhost:8000/system/health', timeout=5); exit(0 if r.status_code == 200 else 1)" || exit 1
+    CMD python -c "import httpx; r = httpx.get('http://localhost:8005/system/health', timeout=5); exit(0 if r.status_code == 200 else 1)" || exit 1
 
 # Production server
 CMD ["uvicorn", "backend.main:app", \
      "--host", "0.0.0.0", \
-     "--port", "8000", \
+     "--port", "8005", \
      "--workers", "1", \
      "--log-level", "info", \
      "--timeout-keep-alive", "65"]

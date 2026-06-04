@@ -46,7 +46,7 @@ SERVICES = [
     {
         "name": "Backend API",
         "command": [PYTHON, "-m", "uvicorn", "backend.main:app",
-                    "--host", "127.0.0.1", "--port", "8000",
+                    "--host", "127.0.0.1", "--port", "8005",
                     "--reload", "--log-level", "info"],
         "process": None,
     },
