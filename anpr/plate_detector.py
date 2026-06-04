@@ -45,7 +45,7 @@ class PlateDetector:
 
         boxes = []
         for i in indices:
-            idx = i if isinstance(i, int) else i[0]
+            idx = int(i[0]) if isinstance(i, (list, tuple, np.ndarray)) else int(i)
             bx, by, bw, bh = raw_boxes[idx]
             boxes.append((bx, by, bx + bw, by + bh, confidences[idx]))
 
