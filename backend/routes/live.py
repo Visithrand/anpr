@@ -404,15 +404,7 @@ class CameraManager:
                         db.commit()
                         db.refresh(vehicle)
                         
-                    existing_entry = db.query(Entry).filter(
-                        Entry.vehicle_id == vehicle.id,
-                        Entry.status == "IN"
-                    ).first()
-                    
-                    if existing_entry:
-                        log.warning("Vehicle %s is already registered as inside, skipping auto-entry.", plate_number)
-                        continue
-                        
+                    # Allow all vehicles — no duplicate check per client requirement
                     entry = Entry(
                         plate_number=plate_number,
                         vehicle_id=vehicle.id,
@@ -882,10 +874,7 @@ async def register_entry(
         db.commit()
         db.refresh(vehicle)
 
-    existing = db.query(Entry).filter(Entry.vehicle_id == vehicle.id, Entry.status == "IN").first()
-    if existing:
-        raise HTTPException(400, f"Vehicle {plate_number} is already inside (Entry ID: {existing.id})")
-
+    # Allow all vehicles — no duplicate check per client requirement
     entry = Entry(
         plate_number=plate_number,
         vehicle_id=vehicle.id,

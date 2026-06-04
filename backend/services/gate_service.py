@@ -2,11 +2,21 @@
 backend/services/gate_service.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Gate control service for Boom Barrier via Modbus TCP.
+
+Supports separate coil addresses for entry and exit gates
+on the same Modbus TCP relay (shared IP + port).
+
+Configuration (from .env / settings):
+  RELAY_IP           = 192.168.1.110
+  RELAY_PORT         = 502
+  ENTRY_RELAY_COIL   = 512
+  EXIT_RELAY_COIL    = 513
+  GATE_OPEN_DURATION = 10
 """
 import logging
 import threading
 import time
-from pymodbus.client.sync import ModbusTcpClient
+from pymodbus.client import ModbusTcpClient
 
 from backend.config import settings
 from backend.utils.database import SessionLocal
@@ -16,20 +26,12 @@ log = logging.getLogger(__name__)
 
 class GateService:
     def __init__(self):
-        self.host = "192.168.1.110"
-        self.port = 502
-        self.coil = 512
+        self.host = settings.RELAY_IP if settings.RELAY_IP else "192.168.1.110"
+        self.port = int(settings.RELAY_PORT) if settings.RELAY_PORT else 502
+        self.entry_coil = settings.ENTRY_RELAY_COIL   # 512
+        self.exit_coil = settings.EXIT_RELAY_COIL      # 513
         self.duration = settings.GATE_OPEN_DURATION
         
-        # Parse GATE_API_URL (expected format: ip:port)
-        if settings.GATE_API_URL:
-            parts = settings.GATE_API_URL.replace("http://", "").replace("https://", "").split(":")
-            if len(parts) == 2:
-                self.host = parts[0]
-                self.port = int(parts[1])
-            elif len(parts) == 1 and parts[0]:
-                self.host = parts[0]
-                
         self.client = None
         self._lock = threading.Lock()
         
@@ -62,36 +64,50 @@ class GateService:
     def is_connected(self) -> bool:
         if not self.client:
             return self.connect()
-        # Modbus client might have disconnected, try writing/reading a dummy or just checking socket
         # Pymodbus sync client doesn't have a reliable is_socket_open sometimes without attempting IO
         # We'll just rely on the connect() state or attempt reconnect on failure.
         return True
 
-    def _write_coil(self, state: bool):
+    def _write_coil(self, coil: int, state: bool):
         with self._lock:
             try:
                 if not self.client or not self.client.connect():
                     self.connect()
                 if self.client:
-                    self.client.write_coil(self.coil, state, unit=1)
+                    self.client.write_coil(coil, state, unit=1)
                     return True
             except Exception as e:
-                log.error(f"Failed to write coil {self.coil}: {e}")
-                self._log_system_error(f"Failed to write coil {self.coil}: {e}")
+                log.error(f"Failed to write coil {coil}: {e}")
+                self._log_system_error(f"Failed to write coil {coil}: {e}")
             return False
 
-    def open_gate(self, duration_seconds: int = None):
+    def _get_coil(self, gate_type: str = "entry") -> int:
+        """Return the coil address for the given gate type."""
+        if gate_type == "exit":
+            return self.exit_coil
+        return self.entry_coil
+
+    def open_gate(self, gate_type: str = "entry", duration_seconds: int = None):
+        """
+        Open a gate by energizing the appropriate Modbus coil.
+        
+        Args:
+            gate_type: "entry" (coil 512) or "exit" (coil 513)
+            duration_seconds: how long to hold the gate open
+        """
         if duration_seconds is None:
             duration_seconds = self.duration
+        
+        coil = self._get_coil(gate_type)
             
         def _trigger():
-            log.info(f"Opening gate (coil {self.coil}) for {duration_seconds}s")
-            if self._write_coil(True):
+            log.info(f"Opening {gate_type} gate (coil {coil}) for {duration_seconds}s")
+            if self._write_coil(coil, True):
                 time.sleep(duration_seconds)
-                self._write_coil(False)
-                log.info("Gate closed.")
+                self._write_coil(coil, False)
+                log.info(f"{gate_type.capitalize()} gate closed (coil {coil}).")
             else:
-                log.error("Gate failed to open.")
+                log.error(f"{gate_type.capitalize()} gate failed to open (coil {coil}).")
                 
         threading.Thread(target=_trigger, daemon=True).start()
 

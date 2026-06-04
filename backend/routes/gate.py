@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/gate", tags=["gate"])
 
 class GateOpenRequest(BaseModel):
     reason: str = "Manual Override"
+    gate_type: str = "entry"  # "entry" or "exit"
 
 @router.post("/open")
 def open_gate_manual(
@@ -23,18 +24,18 @@ def open_gate_manual(
     db: Session = Depends(get_db), 
     current_admin: Admin = Depends(get_current_admin)
 ):
-    # Trigger gate
-    gate_service.open_gate()
+    # Trigger gate with the specified type (entry=coil 512, exit=coil 513)
+    gate_service.open_gate(gate_type=req.gate_type)
     
     # Log manual override
     override = ManualOverride(
-        gate="EXIT", # Assuming modbus barrier is at exit for billing
+        gate=req.gate_type.upper(),
         reason=f"{req.reason} (triggered by {current_admin.email})"
     )
     db.add(override)
     db.commit()
     
-    return {"message": "Gate triggered successfully"}
+    return {"message": f"{req.gate_type.capitalize()} gate triggered successfully"}
 
 @router.get("/status")
 def get_gate_status():

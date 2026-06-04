@@ -50,19 +50,7 @@ async def vehicle_entry(
             db.commit()
             db.refresh(vehicle)
 
-        # 2. Reject if already inside
-        existing_entry = db.query(Entry).filter(
-            Entry.vehicle_id == vehicle.id,
-            Entry.status == "IN"
-        ).first()
-
-        if existing_entry:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Vehicle {plate_number} is already inside (Entry ID: {existing_entry.id})"
-            )
-
-        # 3. Create entry record
+        # 2. Create entry record (allow all vehicles — no duplicate check)
         new_entry = Entry(
             plate_number=plate_number,
             vehicle_id=vehicle.id,

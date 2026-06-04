@@ -144,12 +144,24 @@ class Settings(BaseSettings):
         description="URL of the HTTP-based gate relay controller",
     )
     RELAY_TYPE: str = Field(
-        default="http",
+        default="modbus",
         description="Relay backend type: 'http', 'usb', 'gpio', 'simulated', 'modbus'",
     )
+    RELAY_IP: str = Field(
+        default="192.168.1.110",
+        description="IP address of the Modbus TCP relay controller",
+    )
     RELAY_PORT: str = Field(
-        default="",
-        description="Serial port for USB relay (e.g., COM3 or /dev/ttyUSB0)",
+        default="502",
+        description="Serial port for USB relay (e.g., COM3 or /dev/ttyUSB0), or Modbus TCP port (502)",
+    )
+    ENTRY_RELAY_COIL: int = Field(
+        default=512,
+        description="Modbus coil address for the entry gate relay",
+    )
+    EXIT_RELAY_COIL: int = Field(
+        default=513,
+        description="Modbus coil address for the exit gate relay",
     )
     GATE_OPEN_DURATION: int = Field(
         default=10, ge=3, le=60,

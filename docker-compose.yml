@@ -102,7 +102,12 @@ services:
       BILLING_API_URL: ${BILLING_API_URL:-http://localhost:9001}
       BILLING_BACKEND: ${BILLING_BACKEND:-http}
       GATE_API_URL: ${GATE_API_URL:-http://localhost:9000}
-      RELAY_TYPE: ${RELAY_TYPE:-simulated}
+      RELAY_TYPE: ${RELAY_TYPE:-modbus}
+      RELAY_IP: ${RELAY_IP:-192.168.1.110}
+      RELAY_PORT: ${RELAY_PORT:-502}
+      RELAY_UNIT: 1
+      ENTRY_RELAY_COIL: ${ENTRY_RELAY_COIL:-512}
+      EXIT_RELAY_COIL: ${EXIT_RELAY_COIL:-513}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CAMERA_AUTO_START: ${CAMERA_AUTO_START:-false}
       FRAME_PUBLISH_INTERVAL: ${FRAME_PUBLISH_INTERVAL:-6}
@@ -112,9 +117,8 @@ services:
       EXIT_CAMERA_IDS: ${EXIT_CAMERA_IDS:-}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-anpr-os-secret-key-change-in-production-2026}
       UPLOAD_DIR: /app/uploads
-      RELAY_IP: 192.168.1.110
-      RELAY_PORT: 502
-      RELAY_UNIT: 1
+      EXIT_BILLING_API: ${EXIT_BILLING_API:-http://vhmklds4ap01.sap.madhavkrggroup.com:8000/sap/opu/odata/sap/ZSER_BB_MID_SRV/Headerset}
+      SAP_CLIENT: ${SAP_CLIENT:-120}
       BILLING_MODE: auto
       AUTO_ACCEPT_DELAY: 5
     ports:
@@ -162,9 +166,14 @@ services:
       ENTRY_CAMERA_IDS: ${ENTRY_CAMERA_IDS:-1,2,3,4}
       EXIT_CAMERA_IDS: ${EXIT_CAMERA_IDS:-}
       UPLOAD_DIR: /app/uploads
-      RELAY_IP: 192.168.1.110
-      RELAY_PORT: 502
+      RELAY_TYPE: ${RELAY_TYPE:-modbus}
+      RELAY_IP: ${RELAY_IP:-192.168.1.110}
+      RELAY_PORT: ${RELAY_PORT:-502}
       RELAY_UNIT: 1
+      ENTRY_RELAY_COIL: ${ENTRY_RELAY_COIL:-512}
+      EXIT_RELAY_COIL: ${EXIT_RELAY_COIL:-513}
+      EXIT_BILLING_API: ${EXIT_BILLING_API:-http://vhmklds4ap01.sap.madhavkrggroup.com:8000/sap/opu/odata/sap/ZSER_BB_MID_SRV/Headerset}
+      SAP_CLIENT: ${SAP_CLIENT:-120}
       BILLING_MODE: auto
       AUTO_ACCEPT_DELAY: 5
     volumes:

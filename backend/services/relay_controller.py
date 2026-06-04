@@ -305,6 +305,83 @@ class GPIORelayController(RelayController):
 
 
 # ---------------------------------------------------------------------------
+# Modbus TCP Relay Controller
+# ---------------------------------------------------------------------------
+
+class ModbusRelayController(RelayController):
+    """
+    Controls boom barriers via Modbus TCP (pymodbus).
+
+    Gate ID → coil address mapping is loaded from settings:
+      - "entry" → ENTRY_RELAY_COIL (default 512)
+      - "exit"  → EXIT_RELAY_COIL  (default 513)
+
+    Both share the same Modbus TCP connection (RELAY_IP:RELAY_PORT).
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.host = settings.RELAY_IP if hasattr(settings, 'RELAY_IP') else "192.168.1.110"
+        self.port = int(settings.RELAY_PORT) if settings.RELAY_PORT else 502
+        self._coil_map = {
+            "entry": settings.ENTRY_RELAY_COIL,   # 512
+            "exit": settings.EXIT_RELAY_COIL,      # 513
+        }
+        self._modbus_client = None
+        self._modbus_lock = threading.Lock()
+
+    def _get_client(self):
+        """Lazy-initialize the Modbus TCP connection."""
+        if self._modbus_client is None:
+            try:
+                from pymodbus.client import ModbusTcpClient
+                self._modbus_client = ModbusTcpClient(self.host, port=self.port)
+                if self._modbus_client.connect():
+                    log.info(
+                        "Modbus relay connected at %s:%s (entry coil=%d, exit coil=%d)",
+                        self.host, self.port,
+                        self._coil_map.get("entry", 512),
+                        self._coil_map.get("exit", 513),
+                    )
+                else:
+                    log.error("Modbus relay connection failed at %s:%s", self.host, self.port)
+            except ImportError:
+                raise RuntimeError(
+                    "pymodbus is required for Modbus relay control. "
+                    "Install with: pip install pymodbus"
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to Modbus relay at {self.host}:{self.port}: {e}")
+        return self._modbus_client
+
+    def _write_coil(self, coil: int, state: bool):
+        """Thread-safe coil write."""
+        with self._modbus_lock:
+            client = self._get_client()
+            if client:
+                try:
+                    client.write_coil(coil, state, unit=1)
+                    log.debug("Modbus coil %d → %s", coil, "ON" if state else "OFF")
+                except Exception as e:
+                    log.error("Modbus write_coil(%d, %s) failed: %s", coil, state, e)
+                    # Try to reconnect on next call
+                    self._modbus_client = None
+                    raise
+
+    def _activate(self, gate_id: str) -> dict:
+        coil = self._coil_map.get(gate_id, self._coil_map.get("entry", 512))
+        self._write_coil(coil, True)
+        log.info("Modbus relay: coil %d ON (gate=%s)", coil, gate_id)
+        return {"method": "modbus", "coil": coil, "host": self.host, "port": self.port}
+
+    def _deactivate(self, gate_id: str) -> dict:
+        coil = self._coil_map.get(gate_id, self._coil_map.get("entry", 512))
+        self._write_coil(coil, False)
+        log.info("Modbus relay: coil %d OFF (gate=%s)", coil, gate_id)
+        return {"method": "modbus", "coil": coil, "host": self.host, "port": self.port}
+
+
+# ---------------------------------------------------------------------------
 # Simulated Relay Controller (for development/testing)
 # ---------------------------------------------------------------------------
 
@@ -347,6 +424,8 @@ def get_relay_controller() -> RelayController:
             _controller_instance = USBRelayController()
         elif relay_type == "gpio":
             _controller_instance = GPIORelayController()
+        elif relay_type == "modbus":
+            _controller_instance = ModbusRelayController()
         elif relay_type == "simulated":
             _controller_instance = SimulatedRelayController()
         else:
