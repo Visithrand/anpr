@@ -148,12 +148,12 @@ class Settings(BaseSettings):
         description="Relay backend type: 'http', 'usb', 'gpio', 'simulated', 'modbus'",
     )
     RELAY_IP: str = Field(
-        default="192.168.1.110",
+        default="10.10.1.100",
         description="IP address of the Modbus TCP relay controller",
     )
     RELAY_PORT: str = Field(
-        default="502",
-        description="Serial port for USB relay (e.g., COM3 or /dev/ttyUSB0), or Modbus TCP port (502)",
+        default="506",
+        description="Serial port for USB relay (e.g., COM3 or /dev/ttyUSB0), or Modbus TCP port (506)",
     )
     ENTRY_RELAY_COIL: int = Field(
         default=512,

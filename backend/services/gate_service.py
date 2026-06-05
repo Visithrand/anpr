@@ -7,8 +7,8 @@ Supports separate coil addresses for entry and exit gates
 on the same Modbus TCP relay (shared IP + port).
 
 Configuration (from .env / settings):
-  RELAY_IP           = 192.168.1.110
-  RELAY_PORT         = 502
+  RELAY_IP           = 10.10.1.100
+  RELAY_PORT         = 506
   ENTRY_RELAY_COIL   = 512
   EXIT_RELAY_COIL    = 513
   GATE_OPEN_DURATION = 10
@@ -26,8 +26,8 @@ log = logging.getLogger(__name__)
 
 class GateService:
     def __init__(self):
-        self.host = settings.RELAY_IP if settings.RELAY_IP else "192.168.1.110"
-        self.port = int(settings.RELAY_PORT) if settings.RELAY_PORT else 502
+        self.host = settings.RELAY_IP if settings.RELAY_IP else "10.10.1.100"
+        self.port = int(settings.RELAY_PORT) if settings.RELAY_PORT else 506
         self.entry_coil = settings.ENTRY_RELAY_COIL   # 512
         self.exit_coil = settings.EXIT_RELAY_COIL      # 513
         self.duration = settings.GATE_OPEN_DURATION
